@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">AuditFlow</string>
+    <string name="app_tagline">Source Code Audit &amp; Verification</string>
+    <string name="no_project_loaded">No project loaded.</string>
+    <string name="choose_input_method">Choose how you want to provide a project:</string>
+    <string name="btn_local_project">Local Project</string>
+    <string name="btn_github_repository">GitHub Repository</string>
+    <string name="not_implemented_title">Not Implemented Yet</string>
+    <string name="not_implemented_desc">This capability is not available in Phase 1A (Foundation &amp; Build Infrastructure).</string>
+    <string name="btn_dismiss">Dismiss</string>
+</resources>

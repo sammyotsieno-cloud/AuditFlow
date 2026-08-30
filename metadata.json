@@ -1,0 +1,6 @@
+{
+  "name": "AuditFlow",
+  "description": "Source Code Audit & Verification Android Application — Phase 1A Foundation & Build Infrastructure",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
