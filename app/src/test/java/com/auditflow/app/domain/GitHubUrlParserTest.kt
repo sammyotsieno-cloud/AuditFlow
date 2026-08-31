@@ -43,6 +43,33 @@ class GitHubUrlParserTest {
     fun parseInvalidUrl_returnsNull() {
         assertNull(GitHubUrlParser.parse("not-a-valid-url"))
         assertNull(GitHubUrlParser.parse("https://gitlab.com/owner/repo"))
+        assertNull(GitHubUrlParser.parse("https://bitbucket.org/owner/repo"))
+        assertNull(GitHubUrlParser.parse("https://github.com/"))
+        assertNull(GitHubUrlParser.parse("https://github.com/onlyowner"))
         assertNull(GitHubUrlParser.parse(""))
+        assertNull(GitHubUrlParser.parse(null))
+    }
+
+    @Test
+    fun parseHttpsUrlWithQueryParamsAndFragments_parsesCorrectly() {
+        val parsed1 = GitHubUrlParser.parse("https://github.com/owner/repo?tab=readme")
+        assertEquals("owner", parsed1?.owner)
+        assertEquals("repo", parsed1?.repo)
+
+        val parsed2 = GitHubUrlParser.parse("https://github.com/owner/repo#readme")
+        assertEquals("owner", parsed2?.owner)
+        assertEquals("repo", parsed2?.repo)
+
+        val parsed3 = GitHubUrlParser.parse("  https://github.com/owner/repo/  ")
+        assertEquals("owner", parsed3?.owner)
+        assertEquals("repo", parsed3?.repo)
+    }
+
+    @Test
+    fun parseHttpsUrlWithMultiSegmentBranch_extractsFullBranchPath() {
+        val parsed = GitHubUrlParser.parse("https://github.com/owner/repo/tree/feature/audit-flow")
+        assertEquals("owner", parsed?.owner)
+        assertEquals("repo", parsed?.repo)
+        assertEquals("feature/audit-flow", parsed?.branch)
     }
 }
