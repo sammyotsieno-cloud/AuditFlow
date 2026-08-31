@@ -10,31 +10,41 @@ import com.auditflow.app.domain.repository.SettingsRepository
 /**
  * Real Android Application entry point for AuditFlow.
  *
- * Initializes application-level singletons (preferences and repositories)
- * without global mutable state or fake demonstration fixtures.
+ * Provides application-scoped preferences and repositories with lazy, null-safe initialization.
  */
 class AuditFlowApplication : Application() {
 
-    lateinit var preferences: AuditFlowPreferences
-        private set
+    val preferences: AuditFlowPreferences by lazy {
+        AuditFlowPreferences(applicationContext)
+    }
 
-    lateinit var projectStateRepository: ProjectStateRepository
-        private set
+    val projectStateRepository: ProjectStateRepository by lazy {
+        ProjectStateRepositoryImpl(preferences)
+    }
 
-    lateinit var settingsRepository: SettingsRepository
-        private set
+    val settingsRepository: SettingsRepository by lazy {
+        SettingsRepositoryImpl(preferences)
+    }
+
+    init {
+        _instance = this
+    }
 
     override fun onCreate() {
         super.onCreate()
-        instance = this
-
-        preferences = AuditFlowPreferences(applicationContext)
-        projectStateRepository = ProjectStateRepositoryImpl(preferences)
-        settingsRepository = SettingsRepositoryImpl(preferences)
+        _instance = this
     }
 
     companion object {
-        lateinit var instance: AuditFlowApplication
-            private set
+        private var _instance: AuditFlowApplication? = null
+
+        val instanceOrNull: AuditFlowApplication?
+            get() = _instance
+
+        var instance: AuditFlowApplication
+            get() = _instance ?: throw IllegalStateException("AuditFlowApplication instance is not ready yet.")
+            private set(value) {
+                _instance = value
+            }
     }
 }
