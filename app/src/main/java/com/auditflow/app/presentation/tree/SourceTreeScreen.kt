@@ -2,7 +2,7 @@ package com.auditflow.app.presentation.tree
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,18 +16,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,13 +47,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.auditflow.app.domain.model.ProjectState
-import com.auditflow.app.domain.model.SourceFileNode
+import com.auditflow.app.domain.util.ProjectTreeLine
+import com.auditflow.app.domain.util.ProjectTreeReconstructor
 import com.auditflow.app.presentation.home.HomeViewModel
-import com.auditflow.app.presentation.theme.Blue500
 import com.auditflow.app.presentation.theme.Navy900
 import com.auditflow.app.presentation.theme.Slate100
 import com.auditflow.app.presentation.theme.Slate200
@@ -62,6 +60,7 @@ import com.auditflow.app.presentation.theme.Slate400
 import com.auditflow.app.presentation.theme.Slate50
 import com.auditflow.app.presentation.theme.Slate500
 import com.auditflow.app.presentation.theme.Slate600
+import com.auditflow.app.presentation.theme.Slate800
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,13 +102,21 @@ fun SourceTreeScreen(
     ) { paddingValues ->
         when (val state = uiState.projectState) {
             is ProjectState.ProjectLoaded -> {
-                val filteredFiles = remember(state.files, searchQuery) {
+                val fullTreeRoot = remember(state.metadata.name, state.files) {
+                    ProjectTreeReconstructor.reconstruct(state.metadata.name, state.files)
+                }
+
+                val allTreeLines = remember(fullTreeRoot) {
+                    ProjectTreeReconstructor.generateTreeLines(fullTreeRoot)
+                }
+
+                val displayedLines = remember(allTreeLines, searchQuery) {
                     if (searchQuery.isBlank()) {
-                        state.files
+                        allTreeLines
                     } else {
-                        state.files.filter {
-                            it.relativePath.contains(searchQuery, ignoreCase = true) ||
-                                    it.name.contains(searchQuery, ignoreCase = true)
+                        allTreeLines.filter {
+                            it.displayName.contains(searchQuery, ignoreCase = true) ||
+                                    it.relativePath.contains(searchQuery, ignoreCase = true)
                         }
                     }
                 }
@@ -123,19 +130,19 @@ fun SourceTreeScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
                             .border(1.dp, Slate200, RoundedCornerShape(12.dp)),
                         colors = CardDefaults.cardColors(containerColor = Color.White),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
                             Text(
                                 text = state.metadata.name,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = Navy900
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "${state.metadata.fileCount} source files • ${state.files.size} total nodes",
                                 style = MaterialTheme.typography.bodySmall,
@@ -151,7 +158,7 @@ fun SourceTreeScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 4.dp),
-                        placeholder = { Text("Filter files by name or path...") },
+                        placeholder = { Text("Filter tree by name or path...") },
                         leadingIcon = {
                             Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = Slate400)
                         },
@@ -170,19 +177,35 @@ fun SourceTreeScreen(
                         )
                     )
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
-                    // File List
-                    LazyColumn(
+                    // Canonical Tree Container
+                    Card(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp)
+                            .border(1.dp, Slate200, RoundedCornerShape(12.dp)),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        items(filteredFiles, key = { it.relativePath }) { fileNode ->
-                            SourceFileItem(node = fileNode)
-                        }
-                        item {
-                            Spacer(modifier = Modifier.height(20.dp))
+                        val horizontalScrollState = rememberScrollState()
+
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(12.dp)
+                                .horizontalScroll(horizontalScrollState)
+                        ) {
+                            items(
+                                items = displayedLines,
+                                key = { "${it.depth}_${it.relativePath}_${it.displayName}_${it.prefix}" }
+                            ) { treeLine ->
+                                CanonicalTreeRow(line = treeLine)
+                            }
+                            item {
+                                Spacer(modifier = Modifier.height(24.dp))
+                            }
                         }
                     }
                 }
@@ -235,76 +258,66 @@ fun SourceTreeScreen(
     }
 }
 
+/**
+ * Renders an exact line of the locked canonical tree format:
+ *
+ * PROJECT
+ * ├── README.md
+ * ├── app/
+ * │   ├── build.gradle.kts
+ * │   └── src/
+ * │       ├── main/
+ * │       │   └── AndroidManifest.xml
+ * │       └── test/
+ * │           └── ExampleTest.kt
+ * └── ...
+ */
 @Composable
-private fun SourceFileItem(node: SourceFileNode) {
-    Card(
+private fun CanonicalTreeRow(line: ProjectTreeLine) {
+    Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp)
-            .border(1.dp, Slate200, RoundedCornerShape(8.dp)),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(8.dp)
+            .padding(vertical = 1.5.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Icon(
-                imageVector = if (node.isDirectory) Icons.Default.Folder else Icons.Default.Description,
-                contentDescription = null,
-                tint = if (node.isDirectory) Navy900 else Blue500,
-                modifier = Modifier.size(22.dp)
+        // Monospace structural branch / continuation symbols: ├──, └──, │
+        if (line.prefix.isNotEmpty()) {
+            Text(
+                text = line.prefix,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.sp
+                ),
+                color = Slate400
             )
+        }
 
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Text(
-                    text = node.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (node.isDirectory) FontWeight.Bold else FontWeight.SemiBold,
-                    color = Navy900,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                if (node.relativePath.isNotBlank() && node.relativePath != node.name) {
-                    Text(
-                        text = node.relativePath,
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                        color = Slate500,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                if (!node.isDirectory) {
-                    Text(
-                        text = formatFileSize(node.sizeBytes),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Slate500
-                    )
-                }
+        // Node name with trailing slash for directories
+        Text(
+            text = line.displayName,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontFamily = FontFamily.Monospace
+            ),
+            fontWeight = when {
+                line.isRoot -> FontWeight.Bold
+                line.isDirectory -> FontWeight.SemiBold
+                else -> FontWeight.Normal
+            },
+            color = when {
+                line.isRoot -> Navy900
+                line.isDirectory -> Slate800
+                else -> Navy900
             }
+        )
 
-            if (!node.isDirectory && node.extension.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Slate100)
-                        .padding(horizontal = 6.dp, vertical = 3.dp)
-                ) {
-                    Text(
-                        text = node.extension.uppercase(),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Slate600
-                    )
-                }
+        // Metadata for leaf files (formatted size + extension badge)
+        if (!line.isDirectory && !line.isRoot) {
+            if (line.sizeBytes > 0L) {
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = formatFileSize(line.sizeBytes),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = Slate400
+                )
             }
         }
     }
@@ -318,3 +331,4 @@ private fun formatFileSize(bytes: Long): String {
     val value = bytes / Math.pow(1024.0, digitGroups.toDouble())
     return String.format(java.util.Locale.US, "%.1f %s", value, units[digitGroups])
 }
+
