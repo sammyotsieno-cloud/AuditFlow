@@ -53,6 +53,7 @@ import com.auditflow.app.domain.model.ProjectState
 import com.auditflow.app.domain.util.ProjectTreeLine
 import com.auditflow.app.domain.util.ProjectTreeReconstructor
 import com.auditflow.app.presentation.home.HomeViewModel
+import com.auditflow.app.presentation.theme.Navy800
 import com.auditflow.app.presentation.theme.Navy900
 import com.auditflow.app.presentation.theme.Slate100
 import com.auditflow.app.presentation.theme.Slate200
@@ -60,7 +61,6 @@ import com.auditflow.app.presentation.theme.Slate400
 import com.auditflow.app.presentation.theme.Slate50
 import com.auditflow.app.presentation.theme.Slate500
 import com.auditflow.app.presentation.theme.Slate600
-import com.auditflow.app.presentation.theme.Slate800
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -304,7 +304,7 @@ private fun CanonicalTreeRow(line: ProjectTreeLine) {
             },
             color = when {
                 line.isRoot -> Navy900
-                line.isDirectory -> Slate800
+                line.isDirectory -> Navy800
                 else -> Navy900
             }
         )
