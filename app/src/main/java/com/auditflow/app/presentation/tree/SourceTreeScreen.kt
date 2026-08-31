@@ -256,21 +256,35 @@ private fun SourceFileItem(node: SourceFileNode) {
                 imageVector = if (node.isDirectory) Icons.Default.Folder else Icons.Default.Description,
                 contentDescription = null,
                 tint = if (node.isDirectory) Navy900 else Blue500,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(22.dp)
             )
 
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 Text(
-                    text = node.relativePath,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    fontWeight = if (node.isDirectory) FontWeight.Bold else FontWeight.Normal,
+                    text = node.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (node.isDirectory) FontWeight.Bold else FontWeight.SemiBold,
                     color = Navy900,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (!node.isDirectory && node.sizeBytes > 0) {
+
+                if (node.relativePath.isNotBlank() && node.relativePath != node.name) {
                     Text(
-                        text = "${node.sizeBytes} B",
+                        text = node.relativePath,
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = Slate500,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (!node.isDirectory) {
+                    Text(
+                        text = formatFileSize(node.sizeBytes),
                         style = MaterialTheme.typography.labelSmall,
                         color = Slate500
                     )
@@ -282,7 +296,7 @@ private fun SourceFileItem(node: SourceFileNode) {
                     modifier = Modifier
                         .clip(RoundedCornerShape(4.dp))
                         .background(Slate100)
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .padding(horizontal = 6.dp, vertical = 3.dp)
                 ) {
                     Text(
                         text = node.extension.uppercase(),
@@ -294,4 +308,13 @@ private fun SourceFileItem(node: SourceFileNode) {
             }
         }
     }
+}
+
+private fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0L) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.size - 1)
+    if (digitGroups == 0) return "$bytes B"
+    val value = bytes / Math.pow(1024.0, digitGroups.toDouble())
+    return String.format(java.util.Locale.US, "%.1f %s", value, units[digitGroups])
 }
