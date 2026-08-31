@@ -33,9 +33,12 @@ class MainActivity : ComponentActivity() {
                     ?: ProjectStateRepositoryImpl(AuditFlowPreferences(applicationContext))
                 val settingsRepo = app?.settingsRepository
                     ?: SettingsRepositoryImpl(AuditFlowPreferences(applicationContext))
+                val ingestionRepo = app?.projectIngestionRepository
+                    ?: com.auditflow.app.data.repository.ProjectIngestionRepositoryImpl()
                 return HomeViewModel(
                     projectStateRepository = projectRepo,
-                    settingsRepository = settingsRepo
+                    settingsRepository = settingsRepo,
+                    projectIngestionRepository = ingestionRepo
                 ) as T
             }
         }

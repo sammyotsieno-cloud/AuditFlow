@@ -1,7 +1,12 @@
 package com.auditflow.app.presentation
 
+import android.content.Context
+import android.net.Uri
 import com.auditflow.app.domain.model.ProjectMetadata
+import com.auditflow.app.domain.model.ProjectSourceKind
 import com.auditflow.app.domain.model.ProjectState
+import com.auditflow.app.domain.model.SourceFileNode
+import com.auditflow.app.domain.repository.ProjectIngestionRepository
 import com.auditflow.app.domain.repository.ProjectStateRepository
 import com.auditflow.app.domain.repository.SettingsRepository
 import com.auditflow.app.presentation.home.HomeViewModel
@@ -27,6 +32,7 @@ class HomeViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
     private lateinit var fakeProjectStateRepository: FakeProjectStateRepository
     private lateinit var fakeSettingsRepository: FakeSettingsRepository
+    private lateinit var fakeProjectIngestionRepository: FakeProjectIngestionRepository
     private lateinit var viewModel: HomeViewModel
 
     @Before
@@ -34,9 +40,11 @@ class HomeViewModelTest {
         Dispatchers.setMain(testDispatcher)
         fakeProjectStateRepository = FakeProjectStateRepository()
         fakeSettingsRepository = FakeSettingsRepository()
+        fakeProjectIngestionRepository = FakeProjectIngestionRepository()
         viewModel = HomeViewModel(
             projectStateRepository = fakeProjectStateRepository,
-            settingsRepository = fakeSettingsRepository
+            settingsRepository = fakeSettingsRepository,
+            projectIngestionRepository = fakeProjectIngestionRepository
         )
     }
 
@@ -53,27 +61,60 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun onLocalProjectClicked_triggersNotImplementedDialog() = runTest {
-        viewModel.onLocalProjectClicked()
-        assertTrue(viewModel.uiState.value.isNotImplementedDialogOpen)
-        assertEquals("Local Project Ingestion", viewModel.uiState.value.pendingFeatureName)
+    fun ingestGitHubRepository_success_transitionsToProjectLoaded() = runTest {
+        val sampleNodes = listOf(
+            SourceFileNode(
+                relativePath = "README.md",
+                name = "README.md",
+                extension = "md",
+                sizeBytes = 512L,
+                isDirectory = false
+            )
+        )
+        fakeProjectIngestionRepository.githubResult = Result.success(
+            Pair(
+                ProjectMetadata(
+                    name = "AuditFlow",
+                    pathOrUri = "https://github.com/auditflow/app",
+                    sourceKind = ProjectSourceKind.GITHUB_REPOSITORY,
+                    fileCount = 1,
+                    totalSizeBytes = 512L
+                ),
+                sampleNodes
+            )
+        )
+
+        viewModel.ingestGitHubRepository("auditflow/app")
+
+        val state = viewModel.uiState.value.projectState
+        assertTrue(state is ProjectState.ProjectLoaded)
+        val loaded = state as ProjectState.ProjectLoaded
+        assertEquals("AuditFlow", loaded.metadata.name)
+        assertEquals(1, loaded.files.size)
+        assertEquals("README.md", loaded.files[0].relativePath)
     }
 
     @Test
-    fun onGitHubRepositoryClicked_triggersNotImplementedDialog() = runTest {
-        viewModel.onGitHubRepositoryClicked()
-        assertTrue(viewModel.uiState.value.isNotImplementedDialogOpen)
-        assertEquals("GitHub Repository Ingestion", viewModel.uiState.value.pendingFeatureName)
+    fun ingestGitHubRepository_failure_transitionsToErrorState() = runTest {
+        fakeProjectIngestionRepository.githubResult = Result.failure(
+            IllegalArgumentException("Repository not found (HTTP 404)")
+        )
+
+        viewModel.ingestGitHubRepository("invalid/nonexistent")
+
+        val state = viewModel.uiState.value.projectState
+        assertTrue(state is ProjectState.Error)
+        val error = state as ProjectState.Error
+        assertEquals("Repository not found (HTTP 404)", error.message)
     }
 
     @Test
-    fun onDismissNotImplementedDialog_resetsDialogState() = runTest {
-        viewModel.onLocalProjectClicked()
-        assertTrue(viewModel.uiState.value.isNotImplementedDialogOpen)
+    fun onResetStateToEmpty_transitionsBackToNoProject() = runTest {
+        fakeProjectStateRepository.setError("Some error")
+        assertTrue(viewModel.uiState.value.projectState is ProjectState.Error)
 
-        viewModel.onDismissNotImplementedDialog()
-        assertFalse(viewModel.uiState.value.isNotImplementedDialogOpen)
-        assertEquals("", viewModel.uiState.value.pendingFeatureName)
+        viewModel.onResetStateToEmpty()
+        assertEquals(ProjectState.NoProject, viewModel.uiState.value.projectState)
     }
 
     // In-memory test fakes for deterministic unit verification
@@ -85,12 +126,12 @@ class HomeViewModelTest {
             _state.value = ProjectState.NoProject
         }
 
-        override suspend fun setProjectLoading(source: String, progress: Int) {
-            _state.value = ProjectState.ProjectLoading(source, progress)
+        override suspend fun setProjectLoading(source: String, progress: Int, statusMessage: String) {
+            _state.value = ProjectState.ProjectLoading(source, progress, statusMessage)
         }
 
-        override suspend fun setProjectLoaded(metadata: ProjectMetadata) {
-            _state.value = ProjectState.ProjectLoaded(metadata)
+        override suspend fun setProjectLoaded(metadata: ProjectMetadata, files: List<SourceFileNode>) {
+            _state.value = ProjectState.ProjectLoaded(metadata, files)
         }
 
         override suspend fun setError(message: String, cause: Throwable?) {
@@ -113,4 +154,22 @@ class HomeViewModelTest {
             _selectedMode.value = mode
         }
     }
+
+    private class FakeProjectIngestionRepository : ProjectIngestionRepository {
+        var localResult: Result<Pair<ProjectMetadata, List<SourceFileNode>>> = Result.failure(NotImplementedError())
+        var githubResult: Result<Pair<ProjectMetadata, List<SourceFileNode>>> = Result.failure(NotImplementedError())
+
+        override suspend fun ingestLocalDirectory(
+            treeUri: Uri,
+            context: Context,
+            onProgress: (Int, String) -> Unit
+        ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> = localResult
+
+        override suspend fun ingestGitHubRepository(
+            repoUrlOrSlug: String,
+            branch: String?,
+            onProgress: (Int, String) -> Unit
+        ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> = githubResult
+    }
 }
+

@@ -20,13 +20,13 @@ sealed class AuditFlowDestination(
     data object ProjectInput : AuditFlowDestination(
         route = "project_input",
         title = "Project Input",
-        isImplemented = false
+        isImplemented = true
     )
 
     data object SourceTree : AuditFlowDestination(
         route = "source_tree",
         title = "Source Tree",
-        isImplemented = false
+        isImplemented = true
     )
 
     data object FileInspection : AuditFlowDestination(

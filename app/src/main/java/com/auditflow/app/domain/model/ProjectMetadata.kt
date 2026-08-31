@@ -8,6 +8,9 @@ data class ProjectMetadata(
     val name: String,
     val pathOrUri: String,
     val sourceKind: ProjectSourceKind,
+    val fileCount: Int = 0,
+    val totalSizeBytes: Long = 0L,
+    val branchOrTag: String? = null,
     val timestampLoadedMillis: Long = System.currentTimeMillis()
 )
 

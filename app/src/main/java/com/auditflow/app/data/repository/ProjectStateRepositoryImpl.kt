@@ -3,6 +3,7 @@ package com.auditflow.app.data.repository
 import com.auditflow.app.data.local.AuditFlowPreferences
 import com.auditflow.app.domain.model.ProjectMetadata
 import com.auditflow.app.domain.model.ProjectState
+import com.auditflow.app.domain.model.SourceFileNode
 import com.auditflow.app.domain.repository.ProjectStateRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,13 +33,13 @@ class ProjectStateRepositoryImpl(
         _projectState.value = ProjectState.NoProject
     }
 
-    override suspend fun setProjectLoading(source: String, progress: Int) {
-        _projectState.value = ProjectState.ProjectLoading(source, progress)
+    override suspend fun setProjectLoading(source: String, progress: Int, statusMessage: String) {
+        _projectState.value = ProjectState.ProjectLoading(source, progress, statusMessage)
     }
 
-    override suspend fun setProjectLoaded(metadata: ProjectMetadata) {
+    override suspend fun setProjectLoaded(metadata: ProjectMetadata, files: List<SourceFileNode>) {
         preferences.setPersistedStateKind(AuditFlowPreferences.STATE_KIND_LOADED)
-        _projectState.value = ProjectState.ProjectLoaded(metadata)
+        _projectState.value = ProjectState.ProjectLoaded(metadata, files)
     }
 
     override suspend fun setError(message: String, cause: Throwable?) {

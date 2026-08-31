@@ -2,8 +2,10 @@ package com.auditflow.app
 
 import android.app.Application
 import com.auditflow.app.data.local.AuditFlowPreferences
+import com.auditflow.app.data.repository.ProjectIngestionRepositoryImpl
 import com.auditflow.app.data.repository.ProjectStateRepositoryImpl
 import com.auditflow.app.data.repository.SettingsRepositoryImpl
+import com.auditflow.app.domain.repository.ProjectIngestionRepository
 import com.auditflow.app.domain.repository.ProjectStateRepository
 import com.auditflow.app.domain.repository.SettingsRepository
 
@@ -24,6 +26,10 @@ class AuditFlowApplication : Application() {
 
     val settingsRepository: SettingsRepository by lazy {
         SettingsRepositoryImpl(preferences)
+    }
+
+    val projectIngestionRepository: ProjectIngestionRepository by lazy {
+        ProjectIngestionRepositoryImpl()
     }
 
     init {

@@ -44,12 +44,12 @@ class AuditFlowNavigationTest {
         val all = AuditFlowDestination.allDestinations
         assertEquals(9, all.size)
 
-        // Only Home is implemented in Phase 1A
+        // Implemented in Phase 1A & Phase 1B
         assertTrue(AuditFlowDestination.Home.isImplemented)
+        assertTrue(AuditFlowDestination.ProjectInput.isImplemented)
+        assertTrue(AuditFlowDestination.SourceTree.isImplemented)
 
-        // All future routes are strictly marked as not implemented
-        assertFalse(AuditFlowDestination.ProjectInput.isImplemented)
-        assertFalse(AuditFlowDestination.SourceTree.isImplemented)
+        // Future routes are strictly marked as not implemented yet
         assertFalse(AuditFlowDestination.FileInspection.isImplemented)
         assertFalse(AuditFlowDestination.Audit.isImplemented)
         assertFalse(AuditFlowDestination.Workflow.isImplemented)

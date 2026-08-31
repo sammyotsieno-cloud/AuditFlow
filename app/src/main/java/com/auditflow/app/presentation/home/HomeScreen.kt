@@ -1,5 +1,7 @@
 package com.auditflow.app.presentation.home
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,7 +22,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
@@ -30,6 +34,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -46,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -77,7 +83,17 @@ fun HomeScreen(
     onNavigateToDestination: (AuditFlowDestination) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
+
+    // SAF Directory Picker Launcher for local project ingestion
+    val localDirectoryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.ingestLocalProject(uri, context)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -112,7 +128,7 @@ fun HomeScreen(
                 },
                 actions = {
                     NotImplementedBadge(
-                        text = "PHASE 1A",
+                        text = "PHASE 1B",
                         modifier = Modifier.padding(end = 12.dp)
                     )
                 },
@@ -205,104 +221,242 @@ fun HomeScreen(
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Status Badge
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(Slate100),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Code,
-                            contentDescription = null,
-                            tint = Slate500,
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
+                    when (val state = uiState.projectState) {
+                        is ProjectState.NoProject -> {
+                            // Status Badge
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(Slate100),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Code,
+                                    contentDescription = null,
+                                    tint = Slate500,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
 
-                    Text(
-                        text = when (uiState.projectState) {
-                            is ProjectState.NoProject -> stringResource(R.string.no_project_loaded)
-                            is ProjectState.ProjectLoading -> "Loading Project..."
-                            is ProjectState.ProjectLoaded -> "Project Loaded"
-                            is ProjectState.Error -> "State Error"
-                        },
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Navy900
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text(
-                        text = "No audit data, simulated repository, or test results are loaded.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Slate500,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    HorizontalDivider(color = Slate200)
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    Text(
-                        text = stringResource(R.string.choose_input_method),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Navy900
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Local Project Ingestion Button
-                    Button(
-                        onClick = { viewModel.onLocalProjectClicked() },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Navy900)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.Folder, contentDescription = null)
                             Text(
-                                text = "LOCAL PROJECT",
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 0.5.sp
+                                text = stringResource(R.string.no_project_loaded),
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy900
                             )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = "No audit data, simulated repository, or test results are loaded.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Slate500,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        is ProjectState.ProjectLoading -> {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(Slate100),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = Navy900,
+                                    modifier = Modifier.size(32.dp),
+                                    strokeWidth = 3.dp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text(
+                                text = "Ingesting Project...",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy900
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = state.statusMessage.ifBlank { "Processing source files..." },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Slate600,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        is ProjectState.ProjectLoaded -> {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFECFDF5)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF059669),
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text(
+                                text = state.metadata.name,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy900,
+                                textAlign = TextAlign.Center
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = "${state.metadata.fileCount} source files • ${state.files.size} nodes indexed",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Slate600,
+                                textAlign = TextAlign.Center
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { viewModel.onResetStateToEmpty() },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Unload", color = Navy900)
+                                }
+                                Button(
+                                    onClick = { onNavigateToDestination(AuditFlowDestination.SourceTree) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Navy900)
+                                ) {
+                                    Text("Source Tree")
+                                }
+                            }
+                        }
+
+                        is ProjectState.Error -> {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFEF2F2)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = Color(0xFFDC2626),
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text(
+                                text = "Ingestion Error",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFDC2626)
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = state.message,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF991B1B),
+                                textAlign = TextAlign.Center
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            OutlinedButton(
+                                onClick = { viewModel.onResetStateToEmpty() },
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Dismiss Error", color = Navy900)
+                            }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    if (uiState.projectState is ProjectState.NoProject || uiState.projectState is ProjectState.Error) {
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                    // GitHub Repository Ingestion Button
-                    OutlinedButton(
-                        onClick = { viewModel.onGitHubRepositoryClicked() },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        border = ButtonDefaults.outlinedButtonBorder.copy(width = 1.5.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        HorizontalDivider(color = Slate200)
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Text(
+                            text = stringResource(R.string.choose_input_method),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Navy900
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Local Project Ingestion Button
+                        Button(
+                            onClick = { localDirectoryLauncher.launch(null) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Navy900)
                         ) {
-                            Icon(imageVector = Icons.Default.Code, contentDescription = null, tint = Navy900)
-                            Text(
-                                text = "GITHUB REPOSITORY",
-                                color = Navy900,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 0.5.sp
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Folder, contentDescription = null)
+                                Text(
+                                    text = "LOCAL PROJECT",
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // GitHub Repository Ingestion Button
+                        OutlinedButton(
+                            onClick = { onNavigateToDestination(AuditFlowDestination.ProjectInput) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            border = ButtonDefaults.outlinedButtonBorder.copy(width = 1.5.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Code, contentDescription = null, tint = Navy900)
+                                Text(
+                                    text = "GITHUB REPOSITORY",
+                                    color = Navy900,
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
                         }
                     }
                 }
@@ -315,7 +469,7 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "FUTURE MILESTONE DESTINATIONS",
+                    text = "DESTINATION DIRECTORY",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = Slate500,
@@ -350,7 +504,11 @@ fun HomeScreen(
                                     color = Navy900
                                 )
 
-                                NotImplementedBadge()
+                                if (dest.isImplemented) {
+                                    NotImplementedBadge(text = "PHASE 1B")
+                                } else {
+                                    NotImplementedBadge()
+                                }
                             }
                         }
                     }
@@ -368,3 +526,4 @@ fun HomeScreen(
         )
     }
 }
+

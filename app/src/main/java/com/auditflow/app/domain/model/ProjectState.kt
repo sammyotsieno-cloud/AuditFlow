@@ -22,15 +22,17 @@ sealed interface ProjectState {
      */
     data class ProjectLoading(
         val source: String,
-        val progressPercentage: Int = 0
+        val progressPercentage: Int = 0,
+        val statusMessage: String = ""
     ) : ProjectState
 
     /**
      * Represents a genuinely ingested project.
-     * Note: In Phase 1A this does NOT contain fake audit results or synthetic files.
+     * Note: In Phase 1A & 1B this does NOT contain fake audit results or synthetic files.
      */
     data class ProjectLoaded(
-        val metadata: ProjectMetadata
+        val metadata: ProjectMetadata,
+        val files: List<SourceFileNode> = emptyList()
     ) : ProjectState
 
     /**
