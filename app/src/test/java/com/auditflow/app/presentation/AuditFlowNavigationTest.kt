@@ -9,6 +9,37 @@ import org.junit.Test
 class AuditFlowNavigationTest {
 
     @Test
+    fun startupRouteAccessOrder_doesNotProduceNullDestinations() {
+        // Regression test for Android startup crash:
+        // Accessing AuditFlowDestination.Home.route first must not cause null entries in allDestinations
+        val homeRoute = AuditFlowDestination.Home.route
+        assertEquals("home", homeRoute)
+
+        val destinations = AuditFlowDestination.allDestinations
+        assertEquals(9, destinations.size)
+
+        // Verify every destination in the list is non-null and possesses valid non-empty route and title
+        destinations.forEach { destination ->
+            assertTrue("Destination route must not be blank", destination.route.isNotBlank())
+            assertTrue("Destination title must not be blank", destination.title.isNotBlank())
+        }
+
+        // Verify all 9 distinct destination instances are present
+        val expectedDestinations = listOf(
+            AuditFlowDestination.Home,
+            AuditFlowDestination.ProjectInput,
+            AuditFlowDestination.SourceTree,
+            AuditFlowDestination.FileInspection,
+            AuditFlowDestination.Audit,
+            AuditFlowDestination.Workflow,
+            AuditFlowDestination.Evidence,
+            AuditFlowDestination.Results,
+            AuditFlowDestination.Settings
+        )
+        assertEquals(expectedDestinations, destinations)
+    }
+
+    @Test
     fun destinationCount_andImplementationStatus() {
         val all = AuditFlowDestination.allDestinations
         assertEquals(9, all.size)

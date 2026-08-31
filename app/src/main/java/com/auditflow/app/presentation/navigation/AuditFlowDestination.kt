@@ -66,17 +66,18 @@ sealed class AuditFlowDestination(
     )
 
     companion object {
-        val allDestinations: List<AuditFlowDestination> = listOf(
-            Home,
-            ProjectInput,
-            SourceTree,
-            FileInspection,
-            Audit,
-            Workflow,
-            Evidence,
-            Results,
-            Settings
-        )
+        val allDestinations: List<AuditFlowDestination>
+            get() = listOf(
+                Home,
+                ProjectInput,
+                SourceTree,
+                FileInspection,
+                Audit,
+                Workflow,
+                Evidence,
+                Results,
+                Settings
+            )
 
         fun fromRoute(route: String?): AuditFlowDestination {
             return allDestinations.firstOrNull { it.route == route } ?: Home
