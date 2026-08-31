@@ -236,11 +236,6 @@ object ProjectTreeReconstructor {
     }
 
     private fun normalizePath(rawPath: String): String {
-        return rawPath
-            .replace('\\', '/')
-            .trim('/')
-            .split('/')
-            .filter { it.isNotBlank() && it != "." }
-            .joinToString("/")
+        return com.auditflow.app.domain.model.RelativePathHelper.normalize(rawPath)
     }
 }

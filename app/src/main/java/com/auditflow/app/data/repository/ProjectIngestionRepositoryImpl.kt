@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.auditflow.app.domain.model.PathClassification
 import com.auditflow.app.domain.model.ProjectMetadata
 import com.auditflow.app.domain.model.ProjectSourceKind
+import com.auditflow.app.domain.model.RelativePathHelper
 import com.auditflow.app.domain.model.SourceFileNode
 import com.auditflow.app.domain.repository.ProjectIngestionRepository
 import com.auditflow.app.domain.util.GitHubUrlParser
@@ -130,14 +132,17 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
 
             for (i in 0 until treeArray.length()) {
                 val item = treeArray.getJSONObject(i)
-                val path = item.optString("path", "")
-                if (path.isBlank()) continue
+                val rawPath = item.optString("path", "")
+                if (rawPath.isBlank()) continue
+
+                val normalizedPath = RelativePathHelper.normalize(rawPath)
+                if (normalizedPath.isBlank()) continue
 
                 val type = item.optString("type", "blob")
                 val isDirectory = type == "tree"
                 val sizeBytes = item.optLong("size", 0L)
 
-                val name = path.substringAfterLast('/')
+                val name = normalizedPath.substringAfterLast('/')
                 val extension = if (isDirectory) "" else name.substringAfterLast('.', "")
 
                 if (!isDirectory) {
@@ -147,13 +152,14 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
 
                 fileNodes.add(
                     SourceFileNode(
-                        relativePath = path,
+                        relativePath = normalizedPath,
                         name = name,
                         extension = extension,
                         sizeBytes = sizeBytes,
                         isDirectory = isDirectory,
                         isReadable = true,
-                        mimeType = null
+                        mimeType = null,
+                        pathClassification = PathClassification.ESTABLISHED
                     )
                 )
             }
@@ -228,18 +234,20 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
                     val size = if (cursor.isNull(sizeIdx)) 0L else cursor.getLong(sizeIdx)
 
                     val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
-                    val relativePath = if (parentPath.isEmpty()) name else "$parentPath/$name"
+                    val rawRelativePath = if (parentPath.isEmpty()) name else "$parentPath/$name"
+                    val normalizedRelativePath = RelativePathHelper.normalize(rawRelativePath)
                     val extension = if (isDir) "" else name.substringAfterLast('.', "")
 
                     outFiles.add(
                         SourceFileNode(
-                            relativePath = relativePath,
+                            relativePath = normalizedRelativePath,
                             name = name,
                             extension = extension,
                             sizeBytes = size,
                             isDirectory = isDir,
                             isReadable = true,
-                            mimeType = mime
+                            mimeType = mime,
+                            pathClassification = PathClassification.ESTABLISHED
                         )
                     )
 
@@ -248,7 +256,7 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
                             context = context,
                             treeUri = treeUri,
                             parentDocId = docId,
-                            parentPath = relativePath,
+                            parentPath = normalizedRelativePath,
                             outFiles = outFiles
                         )
                     }
@@ -284,5 +292,116 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
         } finally {
             connection.disconnect()
         }
+    }
+
+    override suspend fun readFileContent(
+        projectMetadata: ProjectMetadata,
+        relativePath: String,
+        context: Context?
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val normalizedPath = RelativePathHelper.normalize(relativePath)
+            when (projectMetadata.sourceKind) {
+                ProjectSourceKind.GITHUB_REPOSITORY -> {
+                    val parsed = GitHubUrlParser.parse(projectMetadata.name)
+                        ?: return@withContext Result.failure(
+                            IllegalArgumentException("Cannot parse GitHub repository coordinates from '${projectMetadata.name}'")
+                        )
+                    // Fetch raw file from GitHub
+                    val rawUrl = "https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/main/$normalizedPath"
+                    val url = URL(rawUrl)
+                    val conn = url.openConnection() as HttpURLConnection
+                    try {
+                        conn.requestMethod = "GET"
+                        conn.connectTimeout = 15000
+                        conn.readTimeout = 15000
+                        conn.setRequestProperty("User-Agent", "AuditFlow-Android")
+                        if (conn.responseCode == HttpURLConnection.HTTP_OK) {
+                            val text = conn.inputStream.bufferedReader().use { it.readText() }
+                            Result.success(text)
+                        } else {
+                            Result.failure(
+                                IllegalStateException("GitHub raw content returned HTTP ${conn.responseCode} for '$normalizedPath'")
+                            )
+                        }
+                    } finally {
+                        conn.disconnect()
+                    }
+                }
+                ProjectSourceKind.LOCAL_DIRECTORY -> {
+                    if (context == null) {
+                        return@withContext Result.failure(
+                            IllegalStateException("Local file inspection requires a valid Android Context")
+                        )
+                    }
+                    val treeUri = Uri.parse(projectMetadata.pathOrUri)
+                    val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
+                        ?: return@withContext Result.failure(
+                            IllegalArgumentException("Cannot resolve root document ID from '${projectMetadata.pathOrUri}'")
+                        )
+
+                    // Find and open document
+                    val content = readLocalSafFile(context, treeUri, rootDocId, normalizedPath)
+                    if (content != null) {
+                        Result.success(content)
+                    } else {
+                        Result.failure(
+                            IllegalStateException("Cannot open or locate local file '$normalizedPath' in SAF hierarchy")
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun readLocalSafFile(
+        context: Context,
+        treeUri: Uri,
+        parentDocId: String,
+        targetRelativePath: String
+    ): String? {
+        val segments = RelativePathHelper.extractSegments(targetRelativePath)
+        if (segments.isEmpty()) return null
+
+        var currentDocId = parentDocId
+
+        for (i in segments.indices) {
+            val segment = segments[i]
+            val isLeaf = (i == segments.lastIndex)
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, currentDocId)
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+            )
+
+            var foundNextDocId: String? = null
+            context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                val idIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(nameIdx)
+                    if (name.equals(segment, ignoreCase = true)) {
+                        foundNextDocId = cursor.getString(idIdx)
+                        val isDir = cursor.getString(mimeIdx) == DocumentsContract.Document.MIME_TYPE_DIR
+                        if (isLeaf && !isDir) {
+                            // Read terminal document content
+                            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, foundNextDocId)
+                            return context.contentResolver.openInputStream(docUri)?.bufferedReader()?.use { it.readText() }
+                        }
+                        break
+                    }
+                }
+            }
+
+            if (foundNextDocId == null) return null
+            currentDocId = foundNextDocId
+        }
+
+        return null
     }
 }

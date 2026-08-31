@@ -32,4 +32,13 @@ interface ProjectIngestionRepository {
         branch: String? = null,
         onProgress: (Int, String) -> Unit = { _, _ -> }
     ): Result<Pair<ProjectMetadata, List<SourceFileNode>>>
+
+    /**
+     * Reads or fetches the raw text content of a specific file from local SAF or remote GitHub.
+     */
+    suspend fun readFileContent(
+        projectMetadata: ProjectMetadata,
+        relativePath: String,
+        context: Context? = null
+    ): Result<String>
 }

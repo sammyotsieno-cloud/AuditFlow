@@ -17,4 +17,34 @@ data class ProjectTreeNode(
     val isDirectory: Boolean,
     val sourceNode: SourceFileNode? = null,
     val children: List<ProjectTreeNode> = emptyList()
-)
+) {
+    /**
+     * Origin classification: ESTABLISHED if backed by an ingested [sourceNode], DERIVED if reconstructed.
+     */
+    val pathClassification: PathClassification
+        get() = sourceNode?.pathClassification ?: PathClassification.DERIVED
+
+    /**
+     * Topology classification (ROOT PATH for depth 1, CHILD PATH for depth >= 2).
+     */
+    val pathTopology: PathTopologyType
+        get() = RelativePathHelper.classifyTopology(relativePath)
+
+    /**
+     * Physical node type (DIRECTORY or FILE).
+     */
+    val physicalNodeType: PhysicalNodeType
+        get() = if (isDirectory) PhysicalNodeType.DIRECTORY else PhysicalNodeType.FILE
+
+    /**
+     * True if this node's parent is the Project Root.
+     */
+    val isRootPath: Boolean
+        get() = RelativePathHelper.isRootPath(relativePath)
+
+    /**
+     * Semantic file type derived from filename and extension.
+     */
+    val semanticFileType: SemanticFileType
+        get() = if (isDirectory) SemanticFileType.UNKNOWN else SemanticFileType.fromFileNameOrPath(relativePath)
+}
