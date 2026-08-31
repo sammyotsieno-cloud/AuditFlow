@@ -246,7 +246,7 @@ fun HomeScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    Divider(color = Slate200)
+                    HorizontalDivider(color = Slate200)
 
                     Spacer(modifier = Modifier.height(20.dp))
 
