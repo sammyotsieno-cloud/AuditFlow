@@ -85,6 +85,7 @@ class ProjectSymbolRegistryTest {
         val localImport = ImportDeclaration(
             importPath = "com.example.domain.DomainEngine",
             importedSymbolName = "DomainEngine",
+            isWildcard = false,
             lineNumber = 2
         )
         val resolvedLocal = registry.resolveImport(localImport, "app/src/main/java/com/example/ui/Ui.kt")
@@ -97,6 +98,7 @@ class ProjectSymbolRegistryTest {
         val externalImport = ImportDeclaration(
             importPath = "androidx.compose.runtime.Composable",
             importedSymbolName = "Composable",
+            isWildcard = false,
             lineNumber = 3
         )
         val resolvedExternal = registry.resolveImport(externalImport, "app/src/main/java/com/example/ui/Ui.kt")
@@ -109,6 +111,7 @@ class ProjectSymbolRegistryTest {
         val brokenImport = ImportDeclaration(
             importPath = "com.nonexistent.fake.GhostService",
             importedSymbolName = "GhostService",
+            isWildcard = false,
             lineNumber = 4
         )
         val resolvedBroken = registry.resolveImport(brokenImport, "app/src/main/java/com/example/ui/Ui.kt")
