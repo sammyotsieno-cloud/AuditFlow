@@ -79,10 +79,20 @@ object SourceCodeStructureExtractor {
             )
         }
 
-        if (fileType == SemanticFileType.BINARY_OR_IMAGE || fileType == SemanticFileType.BYTECODE_ARCHIVE) {
+        if (fileType == SemanticFileType.BINARY_OR_IMAGE ||
+            fileType == SemanticFileType.BYTECODE_ARCHIVE ||
+            fileType == SemanticFileType.DEX_FILE ||
+            fileType == SemanticFileType.RESOURCE_TABLE ||
+            fileType == SemanticFileType.APK_MANIFEST ||
+            fileType == SemanticFileType.APK_ASSET ||
+            fileType == SemanticFileType.APK_RESOURCE ||
+            fileType == SemanticFileType.NATIVE_LIBRARY ||
+            fileType == SemanticFileType.ZIP_ENTRY_FILE ||
+            fileType == SemanticFileType.ZIP_ENTRY_DIRECTORY
+        ) {
             return FileInspectionResult(
                 relativePath = relativePath,
-                physicalNodeType = PhysicalNodeType.FILE,
+                physicalNodeType = if (fileType == SemanticFileType.ZIP_ENTRY_DIRECTORY) PhysicalNodeType.DIRECTORY else PhysicalNodeType.FILE,
                 pathClassification = sourceNode.pathClassification,
                 semanticFileType = fileType,
                 byteSize = sourceNode.sizeBytes,
@@ -116,10 +126,18 @@ object SourceCodeStructureExtractor {
             SemanticFileType.UNKNOWN -> parseGenericText(relativePath, sourceNode, rawContent, lines, fileType, sha256)
 
             SemanticFileType.BINARY_OR_IMAGE,
-            SemanticFileType.BYTECODE_ARCHIVE -> {
+            SemanticFileType.BYTECODE_ARCHIVE,
+            SemanticFileType.DEX_FILE,
+            SemanticFileType.RESOURCE_TABLE,
+            SemanticFileType.APK_MANIFEST,
+            SemanticFileType.APK_ASSET,
+            SemanticFileType.APK_RESOURCE,
+            SemanticFileType.NATIVE_LIBRARY,
+            SemanticFileType.ZIP_ENTRY_FILE,
+            SemanticFileType.ZIP_ENTRY_DIRECTORY -> {
                 FileInspectionResult(
                     relativePath = relativePath,
-                    physicalNodeType = PhysicalNodeType.FILE,
+                    physicalNodeType = if (fileType == SemanticFileType.ZIP_ENTRY_DIRECTORY) PhysicalNodeType.DIRECTORY else PhysicalNodeType.FILE,
                     pathClassification = sourceNode.pathClassification,
                     semanticFileType = fileType,
                     byteSize = sourceNode.sizeBytes,
