@@ -1,6 +1,6 @@
 {
   "name": "AuditFlow",
-  "description": "Source Code Audit & Verification Android Application — Phase C Symbol Resolution & Defect Detection",
+  "description": "Source Code Audit & Verification Android Application — Multi-Artifact (Directory, Repository, APK, ZIP) Ingestion, Symbol Resolution & Defect Detection",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

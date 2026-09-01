@@ -109,6 +109,49 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun ingestLocalArtifact_success_transitionsToProjectLoaded() = runTest {
+        val sampleNodes = listOf(
+            SourceFileNode(
+                relativePath = "AndroidManifest.xml",
+                name = "AndroidManifest.xml",
+                extension = "xml",
+                sizeBytes = 1024L,
+                isDirectory = false
+            ),
+            SourceFileNode(
+                relativePath = "classes.dex",
+                name = "classes.dex",
+                extension = "dex",
+                sizeBytes = 2048L,
+                isDirectory = false
+            )
+        )
+        fakeProjectIngestionRepository.localFileResult = Result.success(
+            Pair(
+                ProjectMetadata(
+                    name = "app.apk",
+                    pathOrUri = "content://sample/app.apk",
+                    sourceKind = ProjectSourceKind.LOCAL_FILE,
+                    fileCount = 2,
+                    totalSizeBytes = 3072L
+                ),
+                sampleNodes
+            )
+        )
+
+        val mockContext: Context = org.mockito.Mockito.mock(Context::class.java)
+        val mockUri: Uri = org.mockito.Mockito.mock(Uri::class.java)
+
+        viewModel.ingestLocalArtifact(mockUri, mockContext)
+
+        val state = viewModel.uiState.value.projectState
+        assertTrue(state is ProjectState.ProjectLoaded)
+        val loaded = state as ProjectState.ProjectLoaded
+        assertEquals("app.apk", loaded.metadata.name)
+        assertEquals(2, loaded.files.size)
+    }
+
+    @Test
     fun onResetStateToEmpty_transitionsBackToNoProject() = runTest {
         fakeProjectStateRepository.setError("Some error")
         assertTrue(viewModel.uiState.value.projectState is ProjectState.Error)
@@ -157,6 +200,7 @@ class HomeViewModelTest {
 
     private class FakeProjectIngestionRepository : ProjectIngestionRepository {
         var localResult: Result<Pair<ProjectMetadata, List<SourceFileNode>>> = Result.failure(NotImplementedError())
+        var localFileResult: Result<Pair<ProjectMetadata, List<SourceFileNode>>> = Result.failure(NotImplementedError())
         var githubResult: Result<Pair<ProjectMetadata, List<SourceFileNode>>> = Result.failure(NotImplementedError())
         var fileContentResult: Result<String> = Result.failure(NotImplementedError())
 
@@ -165,6 +209,12 @@ class HomeViewModelTest {
             context: Context,
             onProgress: (Int, String) -> Unit
         ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> = localResult
+
+        override suspend fun ingestLocalFile(
+            fileUri: Uri,
+            context: Context,
+            onProgress: (Int, String) -> Unit
+        ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> = localFileResult
 
         override suspend fun ingestGitHubRepository(
             repoUrlOrSlug: String,

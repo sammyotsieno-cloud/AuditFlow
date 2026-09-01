@@ -136,15 +136,35 @@ fun SourceTreeScreen(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = state.metadata.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Navy900
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = state.metadata.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Navy900,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Navy900
+                                ) {
+                                    Text(
+                                        text = state.metadata.artifactIdentity.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
+                            }
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "${state.metadata.fileCount} source files • ${state.files.size} total nodes",
+                                text = "${state.metadata.fileCount} entries • ${state.files.size} total nodes",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Slate600
                             )

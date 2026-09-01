@@ -25,6 +25,17 @@ interface ProjectIngestionRepository {
     ): Result<Pair<ProjectMetadata, List<SourceFileNode>>>
 
     /**
+     * Ingests a locally supplied file artifact (e.g. APK or ZIP archive) selected via SAF.
+     * Identifies the artifact type, selects the appropriate extractor, and preserves artifact-specific metadata.
+     */
+    suspend fun ingestLocalFile(
+        fileUri: Uri,
+        context: Context,
+        onProgress: (Int, String) -> Unit = { _, _ -> }
+    ): Result<Pair<ProjectMetadata, List<SourceFileNode>>>
+
+
+    /**
      * Ingests a remote GitHub repository by fetching its verified metadata and Git file tree.
      */
     suspend fun ingestGitHubRepository(

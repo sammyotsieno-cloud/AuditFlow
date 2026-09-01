@@ -80,6 +80,41 @@ class HomeViewModel(
         }
     }
 
+    fun ingestLocalArtifact(fileUri: Uri, context: Context) {
+        viewModelScope.launch {
+            projectStateRepository.setProjectLoading(
+                source = fileUri.toString(),
+                progress = 5,
+                statusMessage = "Opening local artifact..."
+            )
+            val result = projectIngestionRepository.ingestLocalFile(
+                fileUri = fileUri,
+                context = context,
+                onProgress = { progress, msg ->
+                    viewModelScope.launch {
+                        projectStateRepository.setProjectLoading(
+                            source = fileUri.toString(),
+                            progress = progress,
+                            statusMessage = msg
+                        )
+                    }
+                }
+            )
+
+            result.fold(
+                onSuccess = { (metadata, files) ->
+                    projectStateRepository.setProjectLoaded(metadata, files)
+                },
+                onFailure = { error ->
+                    projectStateRepository.setError(
+                        message = error.message ?: "Failed to ingest local artifact",
+                        cause = error
+                    )
+                }
+            )
+        }
+    }
+
     fun ingestGitHubRepository(repoUrlOrSlug: String, branch: String? = null) {
         viewModelScope.launch {
             projectStateRepository.setProjectLoading(

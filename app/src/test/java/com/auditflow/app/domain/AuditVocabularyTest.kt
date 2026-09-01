@@ -505,4 +505,36 @@ class AuditVocabularyTest {
         assertEquals(githubNode.physicalNodeType, safNode.physicalNodeType)
         assertEquals(githubNode.pathClassification, safNode.pathClassification)
     }
+
+    // ========================================================================
+    // TIER 14: ARTIFACT, ARCHIVE, AND PACKAGE IDENTITY
+    // ========================================================================
+
+    @Test
+    fun `apk is distinct from repository and directory project`() {
+        val apkIdentity = com.auditflow.app.domain.model.ArtifactIdentity.APK
+        val repoIdentity = com.auditflow.app.domain.model.ArtifactIdentity.REPOSITORY
+        val dirIdentity = com.auditflow.app.domain.model.ArtifactIdentity.DIRECTORY_PROJECT
+
+        assertNotEquals(apkIdentity, repoIdentity)
+        assertNotEquals(apkIdentity, dirIdentity)
+        assertEquals("APK Package", apkIdentity.label)
+        assertEquals("Repository", repoIdentity.label)
+        assertEquals("Directory Project", dirIdentity.label)
+    }
+
+    @Test
+    fun `archive content identity distinguishes source zip from generic and binary zips`() {
+        val sourceZip = com.auditflow.app.domain.model.ArchiveContentIdentity.ZIP_CONTAINING_SOURCE_PROJECT
+        val binaryZip = com.auditflow.app.domain.model.ArchiveContentIdentity.ZIP_CONTAINING_COMPILED_BINARIES
+        val genericZip = com.auditflow.app.domain.model.ArchiveContentIdentity.ZIP_GENERIC_ARCHIVE
+        val apkZip = com.auditflow.app.domain.model.ArchiveContentIdentity.ZIP_REPRESENTING_APK
+
+        assertNotEquals(sourceZip, binaryZip)
+        assertNotEquals(sourceZip, genericZip)
+        assertNotEquals(sourceZip, apkZip)
+        assertTrue(sourceZip.label.contains("Source"))
+        assertTrue(binaryZip.label.contains("Compiled Binaries"))
+        assertTrue(apkZip.label.contains("APK"))
+    }
 }

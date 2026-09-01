@@ -204,6 +204,14 @@ enum class SemanticFileType(val label: String, val isSourceCode: Boolean) {
     TEXT("TEXT", isSourceCode = false),
     BINARY_OR_IMAGE("BINARY_OR_IMAGE", isSourceCode = false),
     BYTECODE_ARCHIVE("BYTECODE_ARCHIVE", isSourceCode = false),
+    DEX_FILE("DEX_FILE", isSourceCode = false),
+    RESOURCE_TABLE("RESOURCE_TABLE", isSourceCode = false),
+    APK_MANIFEST("APK_MANIFEST", isSourceCode = false),
+    APK_ASSET("APK_ASSET", isSourceCode = false),
+    APK_RESOURCE("APK_RESOURCE", isSourceCode = false),
+    NATIVE_LIBRARY("NATIVE_LIBRARY", isSourceCode = false),
+    ZIP_ENTRY_FILE("ZIP_ENTRY_FILE", isSourceCode = false),
+    ZIP_ENTRY_DIRECTORY("ZIP_ENTRY_DIRECTORY", isSourceCode = false),
     UNKNOWN("UNKNOWN", isSourceCode = false);
 
     companion object {
@@ -211,6 +219,8 @@ enum class SemanticFileType(val label: String, val isSourceCode: Boolean) {
             val fileName = relativePath.substringAfterLast('/').lowercase()
             return when {
                 fileName == "androidmanifest.xml" -> ANDROID_MANIFEST
+                fileName == "resources.arsc" -> RESOURCE_TABLE
+                fileName.endsWith(".dex") -> DEX_FILE
                 fileName.endsWith(".gradle.kts") -> GRADLE_KOTLIN_DSL
                 fileName.endsWith(".gradle") -> GRADLE_GROOVY_DSL
                 fileName.endsWith(".kt") -> KOTLIN_SOURCE
@@ -222,9 +232,11 @@ enum class SemanticFileType(val label: String, val isSourceCode: Boolean) {
                 fileName.endsWith(".yaml") || fileName.endsWith(".yml") -> YAML
                 fileName.endsWith(".md") -> MARKDOWN
                 fileName.endsWith(".txt") -> TEXT
+                fileName.endsWith(".so") || (relativePath.startsWith("lib/") && fileName.endsWith(".so")) -> NATIVE_LIBRARY
+                relativePath.startsWith("assets/") -> APK_ASSET
+                relativePath.startsWith("res/") -> APK_RESOURCE
                 fileName.endsWith(".png") || fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") ||
-                        fileName.endsWith(".webp") || fileName.endsWith(".ico") || fileName.endsWith(".svg") ||
-                        fileName.endsWith(".so") -> BINARY_OR_IMAGE
+                        fileName.endsWith(".webp") || fileName.endsWith(".ico") || fileName.endsWith(".svg") -> BINARY_OR_IMAGE
                 fileName.endsWith(".jar") || fileName.endsWith(".aar") || fileName.endsWith(".apk") || fileName.endsWith(".class") -> BYTECODE_ARCHIVE
                 else -> UNKNOWN
             }
@@ -805,3 +817,142 @@ data class ForensicAuditReport(
     val roleMappings: List<ComponentRoleMapping> = emptyList(),
     val timestampMillis: Long = System.currentTimeMillis()
 )
+
+// ============================================================================
+// TIER 14 — MULTI-ARTIFACT INGESTION & IDENTIFICATION VOCABULARY
+// ============================================================================
+
+/**
+ * High-level established identity of an ingested software artifact.
+ *
+ * Core rule:
+ * IDENTIFY FIRST. INTERPRET SECOND. NORMALIZE ONLY WHERE VALID. PRESERVE ORIGINAL MEANING.
+ * An APK is NOT a repository. A ZIP is NOT automatically a repository.
+ */
+enum class ArtifactIdentity(val label: String, val description: String) {
+    /**
+     * Software source repository presented for source-oriented inspection (e.g. Git repository).
+     */
+    REPOSITORY("REPOSITORY", "Software project repository presented for source-oriented inspection"),
+
+    /**
+     * Local filesystem directory structure containing software project assets.
+     */
+    DIRECTORY_PROJECT("DIRECTORY_PROJECT", "Local filesystem directory structure containing software project assets"),
+
+    /**
+     * Packaged Android application package containing compiled bytecode, manifest, and resources.
+     */
+    APK("APK", "Packaged Android application package containing compiled bytecode, manifest, and resources"),
+
+    /**
+     * General-purpose compressed or uncompressed archive container.
+     */
+    ZIP_ARCHIVE("ZIP_ARCHIVE", "General-purpose compressed or uncompressed archive container"),
+
+    /**
+     * Unrecognized or undetermined software artifact.
+     */
+    UNKNOWN_ARTIFACT("UNKNOWN_ARTIFACT", "Unrecognized or undetermined software artifact")
+}
+
+/**
+ * Classification of the detected contents inside a ZIP archive container.
+ * Preserves the distinction between container and content.
+ */
+enum class ArchiveContentIdentity(val label: String, val description: String) {
+    SOURCE_PROJECT("SOURCE_PROJECT", "Archive containing source code project files"),
+    REPOSITORY_CONTENT("REPOSITORY_CONTENT", "Archive containing software repository export or version-controlled content"),
+    APK("APK", "Archive containing a packaged Android application package"),
+    DOCUMENT_COLLECTION("DOCUMENT_COLLECTION", "Archive containing textual documentation or document files"),
+    BINARY_COLLECTION("BINARY_COLLECTION", "Archive containing compiled binary or executable files"),
+    MIXED_CONTENT("MIXED_CONTENT", "Archive containing a heterogeneous mixture of content types"),
+    UNKNOWN("UNKNOWN", "Archive content identity not determinable from available evidence")
+}
+
+/**
+ * Recognized Android application component kinds declared in an Android package manifest.
+ */
+enum class ApkComponentKind(val label: String) {
+    ACTIVITY("ACTIVITY"),
+    SERVICE("SERVICE"),
+    BROADCAST_RECEIVER("BROADCAST_RECEIVER"),
+    CONTENT_PROVIDER("CONTENT_PROVIDER")
+}
+
+/**
+ * Manifest component declaration within an Android package.
+ */
+data class ApkComponentDeclaration(
+    val name: String,
+    val kind: ApkComponentKind,
+    val isExported: Boolean = false,
+    val permission: String? = null
+)
+
+/**
+ * Verified signing information extracted from an Android Package.
+ */
+data class ApkSigningInformation(
+    val isSigned: Boolean,
+    val schemeVersions: List<String> = emptyList(),
+    val signers: List<String> = emptyList(),
+    val certificateSubject: String? = null,
+    val certificateIssuer: String? = null,
+    val certificateSha256: String? = null
+)
+
+/**
+ * Verified metadata for a Dalvik Executable (DEX) file within an Android package.
+ */
+data class DexFileInfo(
+    val fileName: String,
+    val sizeBytes: Long,
+    val classCount: Int = 0,
+    val methodCount: Int = 0
+)
+
+/**
+ * Structural metadata and package summary extracted from an Android Package (APK).
+ */
+data class ApkPackageMetadata(
+    val applicationId: String,
+    val versionCode: Long? = null,
+    val versionName: String? = null,
+    val minSdk: Int? = null,
+    val targetSdk: Int? = null,
+    val permissions: List<String> = emptyList(),
+    val components: List<ApkComponentDeclaration> = emptyList(),
+    val dexFiles: List<DexFileInfo> = emptyList(),
+    val nativeLibraries: List<String> = emptyList(),
+    val hasResourcesArsc: Boolean = false,
+    val resourceCount: Int = 0,
+    val assetCount: Int = 0,
+    val signingInfo: ApkSigningInformation? = null
+)
+
+/**
+ * Verified entry metadata within a ZIP archive.
+ */
+data class ZipEntryInfo(
+    val archivePath: String,
+    val isDirectory: Boolean,
+    val compressedSizeBytes: Long = 0L,
+    val uncompressedSizeBytes: Long = 0L,
+    val crc: Long = 0L,
+    val compressionMethod: Int = 0
+)
+
+/**
+ * Structural metadata for an ingested ZIP archive.
+ */
+data class ZipArchiveMetadata(
+    val totalEntries: Int,
+    val totalUncompressedSizeBytes: Long,
+    val totalCompressedSizeBytes: Long,
+    val detectedContentIdentity: ArchiveContentIdentity = ArchiveContentIdentity.UNKNOWN,
+    val containsApk: Boolean = false,
+    val containsSourceCode: Boolean = false,
+    val entries: List<ZipEntryInfo> = emptyList()
+)
+

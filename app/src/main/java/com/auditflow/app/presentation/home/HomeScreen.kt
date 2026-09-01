@@ -95,6 +95,15 @@ fun HomeScreen(
         }
     }
 
+    // SAF File Picker Launcher for APK / ZIP / artifact ingestion
+    val localArtifactLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.ingestLocalArtifact(uri, context)
+        }
+    }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -320,12 +329,92 @@ fun HomeScreen(
 
                             Spacer(modifier = Modifier.height(6.dp))
 
+                            // Authoritative Artifact Identity Badge
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Navy900,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = state.metadata.artifactIdentity.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
                             Text(
-                                text = "${state.metadata.fileCount} source files • ${state.files.size} nodes indexed",
+                                text = "${state.metadata.fileCount} entries • ${state.files.size} structural nodes",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Slate600,
                                 textAlign = TextAlign.Center
                             )
+
+                            // Specific APK Package Details if available
+                            state.metadata.apkMetadata?.let { apk ->
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Slate100, RoundedCornerShape(8.dp))
+                                        .padding(12.dp),
+                                    horizontalAlignment = Alignment.Start
+                                ) {
+                                    Text(
+                                        text = "Package: ${apk.applicationId}",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                        fontWeight = FontWeight.Bold,
+                                        color = Navy900
+                                    )
+                                    if (apk.versionName != null || apk.versionCode != null) {
+                                        Text(
+                                            text = "Version: ${apk.versionName ?: "N/A"} (${apk.versionCode ?: "N/A"})",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Slate600
+                                        )
+                                    }
+                                    if (apk.minSdk != null || apk.targetSdk != null) {
+                                        Text(
+                                            text = "SDK: min ${apk.minSdk ?: "?"} / target ${apk.targetSdk ?: "?"}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Slate600
+                                        )
+                                    }
+                                    Text(
+                                        text = "DEX Files: ${apk.dexFiles.size} • Components: ${apk.components.size} • Permissions: ${apk.permissions.size}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Slate600
+                                    )
+                                }
+                            }
+
+                            // Specific ZIP Archive Details if available
+                            state.metadata.zipMetadata?.let { zip ->
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Slate100, RoundedCornerShape(8.dp))
+                                        .padding(12.dp),
+                                    horizontalAlignment = Alignment.Start
+                                ) {
+                                    Text(
+                                        text = "Content: ${zip.detectedContentIdentity.label}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Navy900
+                                    )
+                                    Text(
+                                        text = "Total Entries: ${zip.totalEntries} • Size: ${zip.totalUncompressedSizeBytes} bytes",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Slate600
+                                    )
+                                }
+                            }
 
                             Spacer(modifier = Modifier.height(16.dp))
 
@@ -412,7 +501,7 @@ fun HomeScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Local Project Ingestion Button
+                        // Local Project Directory Ingestion Button
                         Button(
                             onClick = { localDirectoryLauncher.launch(null) },
                             modifier = Modifier
@@ -427,7 +516,33 @@ fun HomeScreen(
                             ) {
                                 Icon(imageVector = Icons.Default.Folder, contentDescription = null)
                                 Text(
-                                    text = "LOCAL PROJECT",
+                                    text = "LOCAL DIRECTORY PROJECT",
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Local File Artifact (APK / ZIP) Ingestion Button
+                        Button(
+                            onClick = {
+                                localArtifactLauncher.launch(arrayOf("*/*"))
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Blue600)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Code, contentDescription = null)
+                                Text(
+                                    text = "LOCAL ARTIFACT (APK / ZIP)",
                                     fontWeight = FontWeight.SemiBold,
                                     letterSpacing = 0.5.sp
                                 )

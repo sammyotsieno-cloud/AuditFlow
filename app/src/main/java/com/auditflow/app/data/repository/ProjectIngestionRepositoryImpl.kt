@@ -4,6 +4,13 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
+import com.auditflow.app.domain.inspection.AndroidBinaryXmlParser
+import com.auditflow.app.domain.inspection.ApkStructureExtractor
+import com.auditflow.app.domain.inspection.ArtifactIdentifier
+import com.auditflow.app.domain.inspection.ZipStructureExtractor
+import com.auditflow.app.domain.model.ArchiveContentIdentity
+import com.auditflow.app.domain.model.ArtifactIdentity
 import com.auditflow.app.domain.model.PathClassification
 import com.auditflow.app.domain.model.ProjectMetadata
 import com.auditflow.app.domain.model.ProjectSourceKind
@@ -15,9 +22,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.zip.ZipInputStream
 
 /**
  * Real implementation of ProjectIngestionRepository.
@@ -87,6 +96,120 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
 
             onProgress(100, "Local project ingestion complete.")
             Result.success(Pair(metadata, sortedNodes))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun ingestLocalFile(
+        fileUri: Uri,
+        context: Context,
+        onProgress: (Int, String) -> Unit
+    ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> = withContext(Dispatchers.IO) {
+        try {
+            try {
+                val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(fileUri, takeFlags)
+            } catch (ignored: Exception) {
+            }
+
+            onProgress(5, "Resolving local file...")
+
+            val fileName = queryFileName(context, fileUri) ?: "artifact"
+            val fileSize = queryFileSize(context, fileUri) ?: 0L
+
+            onProgress(15, "Reading artifact header...")
+
+            val headerBytes = ByteArray(8)
+            context.contentResolver.openInputStream(fileUri)?.use { stream ->
+                stream.read(headerBytes)
+            }
+
+            val isZip = ArtifactIdentifier.isZipMagic(headerBytes)
+            val isApk = fileName.endsWith(".apk", ignoreCase = true) || (isZip && fileName.lowercase().endsWith(".apk"))
+
+            if (isApk || isZip || fileName.endsWith(".zip", ignoreCase = true)) {
+                onProgress(30, "Analyzing artifact structure...")
+
+                val inputStream = context.contentResolver.openInputStream(fileUri)
+                    ?: return@withContext Result.failure(
+                        IllegalStateException("Unable to open input stream for URI: $fileUri")
+                    )
+
+                val (metadata, nodes) = inputStream.use { stream ->
+                    if (isApk) {
+                        onProgress(50, "Extracting Android Package (APK) metadata...")
+                        val apkResult = ApkStructureExtractor.extract(stream, fileName)
+                        val totalSize = if (fileSize > 0) fileSize else apkResult.nodes.filter { !it.isDirectory }.sumOf { it.sizeBytes }
+                        val meta = ProjectMetadata(
+                            name = fileName,
+                            pathOrUri = fileUri.toString(),
+                            sourceKind = ProjectSourceKind.LOCAL_FILE,
+                            fileCount = apkResult.nodes.count { !it.isDirectory },
+                            totalSizeBytes = totalSize,
+                            artifactIdentity = ArtifactIdentity.APK,
+                            archiveContentIdentity = ArchiveContentIdentity.APK,
+                            apkMetadata = apkResult.metadata,
+                            timestampLoadedMillis = System.currentTimeMillis()
+                        )
+                        Pair(meta, apkResult.nodes)
+                    } else {
+                        onProgress(50, "Extracting ZIP archive entries...")
+                        val zipResult = ZipStructureExtractor.extract(stream, fileName)
+                        val totalSize = if (fileSize > 0) fileSize else zipResult.metadata.totalUncompressedSizeBytes
+
+                        val artifactIdent = if (zipResult.metadata.containsApk || zipResult.metadata.detectedContentIdentity == ArchiveContentIdentity.APK) {
+                            ArtifactIdentity.APK
+                        } else {
+                            ArtifactIdentity.ZIP_ARCHIVE
+                        }
+
+                        val meta = ProjectMetadata(
+                            name = fileName,
+                            pathOrUri = fileUri.toString(),
+                            sourceKind = ProjectSourceKind.LOCAL_FILE,
+                            fileCount = zipResult.nodes.count { !it.isDirectory },
+                            totalSizeBytes = totalSize,
+                            artifactIdentity = artifactIdent,
+                            archiveContentIdentity = zipResult.metadata.detectedContentIdentity,
+                            zipMetadata = zipResult.metadata,
+                            timestampLoadedMillis = System.currentTimeMillis()
+                        )
+                        Pair(meta, zipResult.nodes)
+                    }
+                }
+
+                if (nodes.isEmpty()) {
+                    return@withContext Result.failure(
+                        IllegalArgumentException("The selected artifact contains no accessible entries.")
+                    )
+                }
+
+                onProgress(100, "Artifact ingestion complete.")
+                Result.success(Pair(metadata, nodes))
+            } else {
+                val node = SourceFileNode(
+                    relativePath = fileName,
+                    name = fileName,
+                    extension = fileName.substringAfterLast('.', ""),
+                    sizeBytes = fileSize,
+                    isDirectory = false,
+                    isReadable = true,
+                    pathClassification = PathClassification.ESTABLISHED
+                )
+                val metadata = ProjectMetadata(
+                    name = fileName,
+                    pathOrUri = fileUri.toString(),
+                    sourceKind = ProjectSourceKind.LOCAL_FILE,
+                    fileCount = 1,
+                    totalSizeBytes = fileSize,
+                    artifactIdentity = ArtifactIdentity.UNKNOWN_ARTIFACT,
+                    archiveContentIdentity = ArchiveContentIdentity.UNKNOWN,
+                    timestampLoadedMillis = System.currentTimeMillis()
+                )
+                onProgress(100, "Single file ingestion complete.")
+                Result.success(Pair(metadata, listOf(node)))
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -350,9 +473,81 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
                         )
                     }
                 }
+                ProjectSourceKind.LOCAL_FILE -> {
+                    if (context == null) {
+                        return@withContext Result.failure(
+                            IllegalStateException("Local artifact inspection requires a valid Android Context")
+                        )
+                    }
+                    val fileUri = Uri.parse(projectMetadata.pathOrUri)
+                    val inputStream = context.contentResolver.openInputStream(fileUri)
+                        ?: return@withContext Result.failure(
+                            IllegalStateException("Cannot open input stream for '$fileUri'")
+                        )
+                    val content = inputStream.use { stream ->
+                        readArchiveEntryContent(stream, normalizedPath)
+                    }
+                    if (content != null) {
+                        Result.success(content)
+                    } else {
+                        Result.failure(
+                            IllegalStateException("Cannot read or locate entry '$normalizedPath' in artifact")
+                        )
+                    }
+                }
             }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    private fun readArchiveEntryContent(stream: InputStream, targetPath: String): String? {
+        return try {
+            val zipIn = ZipInputStream(stream)
+            var entry = zipIn.nextEntry
+            while (entry != null) {
+                val normalized = RelativePathHelper.normalize(entry.name)
+                if (normalized.equals(targetPath, ignoreCase = true)) {
+                    val bytes = zipIn.readBytes()
+                    // If it's a binary file, return a descriptive summary rather than corrupted UTF-8
+                    return if (bytes.any { it == 0.toByte() }) {
+                        "[Binary Artifact Entry: ${bytes.size} bytes]"
+                    } else {
+                        String(bytes, Charsets.UTF_8)
+                    }
+                }
+                zipIn.closeEntry()
+                entry = zipIn.nextEntry
+            }
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun queryFileName(context: Context, uri: Uri): String? {
+        val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
+        return try {
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    cursor.getString(0)
+                } else null
+            } ?: uri.lastPathSegment
+        } catch (e: Exception) {
+            uri.lastPathSegment
+        }
+    }
+
+    private fun queryFileSize(context: Context, uri: Uri): Long? {
+        val projection = arrayOf(OpenableColumns.SIZE)
+        return try {
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    if (cursor.isNull(0)) null else cursor.getLong(0)
+                } else null
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 
