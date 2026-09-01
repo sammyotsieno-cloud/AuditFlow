@@ -41,15 +41,19 @@ class SymbolResolutionStation(
             graph.inheritances.count { it.isExternal }
 
         val summary = ResolutionSummary(
-            totalFilesAudited = inspections.size,
+            totalFilesInspected = inspections.size,
             totalSymbolsIndexed = registry.size,
-            totalDependenciesResolved = graph.dependencies.size,
-            totalCallEdges = graph.calls.size,
-            totalInheritanceEdges = graph.inheritances.size,
-            totalImplementationEdges = graph.implementations.size,
-            totalUnresolvedSymbols = totalUnresolved,
-            totalExternalReferences = totalExternal,
-            totalDefectsDetected = findings.size
+            totalDependencies = graph.dependencies.size,
+            resolvedDependencies = graph.dependencies.count { it.resolutionStatus == ResolutionStatus.RESOLVED },
+            externalDependencies = graph.dependencies.count { it.isExternal },
+            unresolvedDependencies = graph.dependencies.count { it.resolutionStatus == ResolutionStatus.UNRESOLVED },
+            totalCalls = graph.calls.size,
+            resolvedCalls = graph.calls.count { it.resolutionStatus == ResolutionStatus.RESOLVED },
+            externalCalls = graph.calls.count { it.isExternal },
+            unresolvedCalls = graph.calls.count { it.resolutionStatus == ResolutionStatus.UNRESOLVED },
+            totalInheritances = graph.inheritances.size,
+            totalImplementations = graph.implementations.size,
+            totalDefectsFound = findings.size
         )
 
         return Station4ResolutionResult(

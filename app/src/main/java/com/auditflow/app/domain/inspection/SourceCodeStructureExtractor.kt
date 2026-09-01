@@ -1,5 +1,6 @@
 package com.auditflow.app.domain.inspection
 
+import com.auditflow.app.domain.model.CallInvocation
 import com.auditflow.app.domain.model.CodeSymbol
 import com.auditflow.app.domain.model.CodeSymbolKind
 import com.auditflow.app.domain.model.ContentAvailabilityState

@@ -37,7 +37,7 @@ class SymbolResolutionStationTest {
         val circularFindings = result.findings.filter { it.defectKind == ForensicDefectKind.CIRCULAR_DEPENDENCY }
         assertTrue("Circular dependency must be detected", circularFindings.isNotEmpty())
         assertEquals(EpistemicClassification.FACT, circularFindings.first().epistemicType)
-        assertTrue(result.summary.totalDefectsDetected > 0)
+        assertTrue(result.summary.totalDefectsFound > 0)
     }
 
     @Test
@@ -125,9 +125,9 @@ class SymbolResolutionStationTest {
         val station = SymbolResolutionStation()
         val result = station.process(listOf(insp1, insp2))
 
-        assertEquals(2, result.summary.totalFilesAudited)
+        assertEquals(2, result.summary.totalFilesInspected)
         assertTrue(result.summary.totalSymbolsIndexed >= 3)
-        assertEquals(1, result.summary.totalInheritanceEdges)
-        assertEquals(1, result.summary.totalImplementationEdges)
+        assertEquals(1, result.summary.totalInheritances)
+        assertEquals(1, result.summary.totalImplementations)
     }
 }
