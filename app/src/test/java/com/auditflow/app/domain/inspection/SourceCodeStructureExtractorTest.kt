@@ -451,7 +451,13 @@ class SourceCodeStructureExtractorTest {
 
         val inspectionResults = FileInspectionStation.inspectHierarchy(hierarchyResult) { path ->
             if (path == "app/src/main/java/com/test/A.kt") {
-                "package com.test\nclass A { fun work(): Unit = Unit }"
+                """
+                    package com.test
+                    
+                    class A {
+                        fun work(): Unit = Unit
+                    }
+                """.trimIndent()
             } else {
                 null
             }

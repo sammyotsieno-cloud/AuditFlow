@@ -719,7 +719,8 @@ object SourceCodeStructureExtractor {
 
             val hasDefault = cleanToken.contains('=')
             val beforeDefault = cleanToken.substringBefore('=').trim()
-            val paramName = beforeDefault.substringBefore(':').removePrefix("val ").removePrefix("var ").trim()
+            val rawName = beforeDefault.substringBefore(':').trim()
+            val paramName = rawName.split(Regex("\\s+")).lastOrNull()?.trim() ?: ""
             val paramType = if (beforeDefault.contains(':')) beforeDefault.substringAfter(':').trim() else "Any"
 
             if (paramName.isNotBlank() && isValidIdentifier(paramName)) {
@@ -793,32 +794,29 @@ object SourceCodeStructureExtractor {
     }
 
     private fun extractSuperTypes(afterKeyword: String): List<String> {
-        val withoutParams = if (afterKeyword.contains('(')) {
+        val afterName = afterKeyword.substringBefore('{').substringBefore("where ")
+        val superTypesPart = if (afterName.contains('(') && afterName.indexOf('(') < (afterName.indexOf(':').takeIf { it != -1 } ?: Int.MAX_VALUE)) {
             var depth = 0
-            var afterIndex = -1
-            for (i in afterKeyword.indices) {
-                if (afterKeyword[i] == '(') depth++
-                else if (afterKeyword[i] == ')') {
+            var colonIndex = -1
+            for (i in afterName.indices) {
+                if (afterName[i] == '(') depth++
+                else if (afterName[i] == ')') {
                     depth--
                     if (depth == 0) {
-                        afterIndex = i + 1
+                        val rest = afterName.substring(i + 1)
+                        val idx = rest.indexOf(':')
+                        if (idx != -1) {
+                            colonIndex = i + 1 + idx
+                        }
                         break
                     }
                 }
             }
-            if (afterIndex != -1) afterKeyword.substring(afterIndex) else ""
+            if (colonIndex != -1) afterName.substring(colonIndex + 1) else ""
         } else {
-            val colonIdx = afterKeyword.indexOf(':')
-            if (colonIdx != -1) afterKeyword.substring(colonIdx) else ""
+            val colonIdx = afterName.indexOf(':')
+            if (colonIdx != -1) afterName.substring(colonIdx + 1) else ""
         }
-
-        val colonIdx = withoutParams.indexOf(':')
-        if (colonIdx == -1) return emptyList()
-
-        val superTypesPart = withoutParams.substring(colonIdx + 1)
-            .substringBefore('{')
-            .substringBefore("where ")
-            .trim()
 
         if (superTypesPart.isBlank()) return emptyList()
 

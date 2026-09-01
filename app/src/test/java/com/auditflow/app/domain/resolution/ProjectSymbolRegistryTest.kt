@@ -45,7 +45,7 @@ class ProjectSymbolRegistryTest {
 
         val registry = ProjectSymbolRegistry.build(listOf(insp1, insp2))
 
-        assertEquals(4, registry.getAllSymbols().size) // UserAccount, AccountRepository, findById, AccountRepositoryImpl (plus inner override findById)
+        assertEquals(5, registry.getAllSymbols().size) // UserAccount, AccountRepository, findById, AccountRepositoryImpl, plus inner override findById
 
         // Lookup by FQN
         val userAccount = registry.findSymbolByFqn("com.example.domain.model.UserAccount")
@@ -63,7 +63,7 @@ class ProjectSymbolRegistryTest {
 
         // Lookup by package
         val domainSymbols = registry.findSymbolsInPackage("com.example.domain.model")
-        assertEquals(2, domainSymbols.size)
+        assertEquals(3, domainSymbols.size)
 
         // Lookup by file
         val file2Symbols = registry.findSymbolsInFile("app/src/main/java/com/example/data/repository/AccountRepositoryImpl.kt")
