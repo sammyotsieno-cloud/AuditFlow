@@ -158,6 +158,7 @@ class HomeViewModelTest {
     private class FakeProjectIngestionRepository : ProjectIngestionRepository {
         var localResult: Result<Pair<ProjectMetadata, List<SourceFileNode>>> = Result.failure(NotImplementedError())
         var githubResult: Result<Pair<ProjectMetadata, List<SourceFileNode>>> = Result.failure(NotImplementedError())
+        var fileContentResult: Result<String> = Result.failure(NotImplementedError())
 
         override suspend fun ingestLocalDirectory(
             treeUri: Uri,
@@ -170,6 +171,12 @@ class HomeViewModelTest {
             branch: String?,
             onProgress: (Int, String) -> Unit
         ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> = githubResult
+
+        override suspend fun readFileContent(
+            projectMetadata: ProjectMetadata,
+            relativePath: String,
+            context: Context?
+        ): Result<String> = fileContentResult
     }
 }
 
