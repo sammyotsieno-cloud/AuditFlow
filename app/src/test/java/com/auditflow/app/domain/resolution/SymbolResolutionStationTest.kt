@@ -25,8 +25,8 @@ class SymbolResolutionStationTest {
             class ServiceB(private val a: ServiceA)
         """.trimIndent()
 
-        val fileA = SourceFileNode("app/src/main/java/com/example/cycle/ServiceA.kt", "ServiceA.kt", "kt", 100, false, PathClassification.ESTABLISHED)
-        val fileB = SourceFileNode("app/src/main/java/com/example/cycle/ServiceB.kt", "ServiceB.kt", "kt", 100, false, PathClassification.ESTABLISHED)
+        val fileA = SourceFileNode("app/src/main/java/com/example/cycle/ServiceA.kt", "ServiceA.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
+        val fileB = SourceFileNode("app/src/main/java/com/example/cycle/ServiceB.kt", "ServiceB.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
 
         val inspA = SourceCodeStructureExtractor.inspect(fileA, fileASource)
         val inspB = SourceCodeStructureExtractor.inspect(fileB, fileBSource)
@@ -51,7 +51,7 @@ class SymbolResolutionStationTest {
             data class PureDomainEntity(val id: String)
         """.trimIndent()
 
-        val file = SourceFileNode("app/src/main/java/com/example/domain/model/PureDomainEntity.kt", "PureDomainEntity.kt", "kt", 100, false, PathClassification.ESTABLISHED)
+        val file = SourceFileNode("app/src/main/java/com/example/domain/model/PureDomainEntity.kt", "PureDomainEntity.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
         val insp = SourceCodeStructureExtractor.inspect(file, domainSource)
 
         val station = SymbolResolutionStation()
@@ -72,7 +72,7 @@ class SymbolResolutionStationTest {
             class AppRunner(private val ghost: NonExistentClass)
         """.trimIndent()
 
-        val file = SourceFileNode("app/src/main/java/com/example/app/AppRunner.kt", "AppRunner.kt", "kt", 100, false, PathClassification.ESTABLISHED)
+        val file = SourceFileNode("app/src/main/java/com/example/app/AppRunner.kt", "AppRunner.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
         val insp = SourceCodeStructureExtractor.inspect(file, source)
 
         val station = SymbolResolutionStation()
@@ -89,7 +89,7 @@ class SymbolResolutionStationTest {
             class ActualCalculator
         """.trimIndent()
 
-        val file = SourceFileNode("app/src/main/java/com/example/app/BananaHelper.kt", "BananaHelper.kt", "kt", 100, false, PathClassification.ESTABLISHED)
+        val file = SourceFileNode("app/src/main/java/com/example/app/BananaHelper.kt", "BananaHelper.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
         val insp = SourceCodeStructureExtractor.inspect(file, source)
 
         val station = SymbolResolutionStation()
@@ -116,8 +116,8 @@ class SymbolResolutionStationTest {
             }
         """.trimIndent()
 
-        val f1 = SourceFileNode("app/src/main/java/com/example/domain/TaskService.kt", "TaskService.kt", "kt", 100, false, PathClassification.ESTABLISHED)
-        val f2 = SourceFileNode("app/src/main/java/com/example/data/TaskServiceImpl.kt", "TaskServiceImpl.kt", "kt", 100, false, PathClassification.ESTABLISHED)
+        val f1 = SourceFileNode("app/src/main/java/com/example/domain/TaskService.kt", "TaskService.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
+        val f2 = SourceFileNode("app/src/main/java/com/example/data/TaskServiceImpl.kt", "TaskServiceImpl.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
 
         val insp1 = SourceCodeStructureExtractor.inspect(f1, s1)
         val insp2 = SourceCodeStructureExtractor.inspect(f2, s2)

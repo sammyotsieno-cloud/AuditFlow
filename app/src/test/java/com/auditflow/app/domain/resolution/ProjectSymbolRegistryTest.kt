@@ -37,8 +37,8 @@ class ProjectSymbolRegistryTest {
             }
         """.trimIndent()
 
-        val file1 = SourceFileNode("app/src/main/java/com/example/domain/model/UserAccount.kt", "UserAccount.kt", "kt", 100, false, PathClassification.ESTABLISHED)
-        val file2 = SourceFileNode("app/src/main/java/com/example/data/repository/AccountRepositoryImpl.kt", "AccountRepositoryImpl.kt", "kt", 100, false, PathClassification.ESTABLISHED)
+        val file1 = SourceFileNode("app/src/main/java/com/example/domain/model/UserAccount.kt", "UserAccount.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
+        val file2 = SourceFileNode("app/src/main/java/com/example/data/repository/AccountRepositoryImpl.kt", "AccountRepositoryImpl.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
 
         val insp1 = SourceCodeStructureExtractor.inspect(file1, modelSource)
         val insp2 = SourceCodeStructureExtractor.inspect(file2, repoSource)
@@ -77,7 +77,7 @@ class ProjectSymbolRegistryTest {
             class DomainEngine
         """.trimIndent()
 
-        val file1 = SourceFileNode("app/src/main/java/com/example/domain/DomainEngine.kt", "DomainEngine.kt", "kt", 100, false, PathClassification.ESTABLISHED)
+        val file1 = SourceFileNode("app/src/main/java/com/example/domain/DomainEngine.kt", "DomainEngine.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
         val insp1 = SourceCodeStructureExtractor.inspect(file1, domainSource)
         val registry = ProjectSymbolRegistry.build(listOf(insp1))
 
@@ -124,7 +124,7 @@ class ProjectSymbolRegistryTest {
             data class Currency(val code: String)
         """.trimIndent()
 
-        val file1 = SourceFileNode("app/src/main/java/com/example/domain/model/Currency.kt", "Currency.kt", "kt", 100, false, PathClassification.ESTABLISHED)
+        val file1 = SourceFileNode("app/src/main/java/com/example/domain/model/Currency.kt", "Currency.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
         val insp1 = SourceCodeStructureExtractor.inspect(file1, modelSource)
         val registry = ProjectSymbolRegistry.build(listOf(insp1))
 

@@ -51,9 +51,9 @@ class CrossFileRelationshipResolverTest {
             }
         """.trimIndent()
 
-        val file1 = SourceFileNode("app/src/main/java/com/example/domain/AuditScanner.kt", "AuditScanner.kt", "kt", 100, false, PathClassification.ESTABLISHED)
-        val file2 = SourceFileNode("app/src/main/java/com/example/service/FastAuditScanner.kt", "FastAuditScanner.kt", "kt", 100, false, PathClassification.ESTABLISHED)
-        val file3 = SourceFileNode("app/src/main/java/com/example/ui/AuditViewModel.kt", "AuditViewModel.kt", "kt", 100, false, PathClassification.ESTABLISHED)
+        val file1 = SourceFileNode("app/src/main/java/com/example/domain/AuditScanner.kt", "AuditScanner.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
+        val file2 = SourceFileNode("app/src/main/java/com/example/service/FastAuditScanner.kt", "FastAuditScanner.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
+        val file3 = SourceFileNode("app/src/main/java/com/example/ui/AuditViewModel.kt", "AuditViewModel.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
 
         val insp1 = SourceCodeStructureExtractor.inspect(file1, interfaceSource)
         val insp2 = SourceCodeStructureExtractor.inspect(file2, implSource)
@@ -106,8 +106,8 @@ class CrossFileRelationshipResolverTest {
             class EnhancedService : BaseService()
         """.trimIndent()
 
-        val file1 = SourceFileNode("app/src/main/java/com/example/base/BaseService.kt", "BaseService.kt", "kt", 100, false, PathClassification.ESTABLISHED)
-        val file2 = SourceFileNode("app/src/main/java/com/example/impl/EnhancedService.kt", "EnhancedService.kt", "kt", 100, false, PathClassification.ESTABLISHED)
+        val file1 = SourceFileNode("app/src/main/java/com/example/base/BaseService.kt", "BaseService.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
+        val file2 = SourceFileNode("app/src/main/java/com/example/impl/EnhancedService.kt", "EnhancedService.kt", "kt", 100L, false, pathClassification = PathClassification.ESTABLISHED)
 
         val insp1 = SourceCodeStructureExtractor.inspect(file1, baseSource)
         val insp2 = SourceCodeStructureExtractor.inspect(file2, subSource)
