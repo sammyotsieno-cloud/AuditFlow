@@ -22,19 +22,18 @@ class ZipStructureExtractorTest {
             )
         )
 
-        val (metadata, nodes) = ZipStructureExtractor.extract(
-            zipStream = ByteArrayInputStream(zipBytes),
-            archiveName = "sample.zip",
-            sourceUri = "content://samples/sample.zip",
-            archiveSizeBytes = zipBytes.size.toLong()
+        val result = ZipStructureExtractor.extract(
+            inputStream = ByteArrayInputStream(zipBytes),
+            zipFileName = "sample.zip"
         )
 
+        val metadata = result.metadata
+        val nodes = result.nodes
+
         assertNotNull(metadata)
-        assertEquals("sample.zip", metadata.name)
-        assertEquals(3, metadata.fileCount)
-        assertNotNull(metadata.zipMetadata)
-        assertEquals(3, metadata.zipMetadata?.totalEntries)
-        assertEquals(ArchiveContentIdentity.ZIP_CONTAINING_SOURCE_PROJECT, metadata.zipMetadata?.detectedContentIdentity)
+        assertEquals(3, metadata.totalEntries)
+        assertEquals(ArchiveContentIdentity.REPOSITORY_CONTENT, metadata.detectedContentIdentity)
+        assertTrue(metadata.containsSourceCode)
 
         // Verify nodes
         val relativePaths = nodes.map { it.relativePath }

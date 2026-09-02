@@ -448,8 +448,15 @@ fun ProjectInputScreen(
                             imeAction = ImeAction.Next
                         ),
                         colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Navy900,
+                            unfocusedTextColor = Navy900,
+                            focusedPlaceholderColor = Slate400,
+                            unfocusedPlaceholderColor = Slate400,
+                            focusedLabelColor = Navy900,
+                            unfocusedLabelColor = Slate600,
                             focusedBorderColor = Navy900,
-                            unfocusedBorderColor = Slate200
+                            unfocusedBorderColor = Slate200,
+                            cursorColor = Navy900
                         )
                     )
 
@@ -481,8 +488,15 @@ fun ProjectInputScreen(
                             }
                         ),
                         colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Navy900,
+                            unfocusedTextColor = Navy900,
+                            focusedPlaceholderColor = Slate400,
+                            unfocusedPlaceholderColor = Slate400,
+                            focusedLabelColor = Navy900,
+                            unfocusedLabelColor = Slate600,
                             focusedBorderColor = Navy900,
-                            unfocusedBorderColor = Slate200
+                            unfocusedBorderColor = Slate200,
+                            cursorColor = Navy900
                         )
                     )
 

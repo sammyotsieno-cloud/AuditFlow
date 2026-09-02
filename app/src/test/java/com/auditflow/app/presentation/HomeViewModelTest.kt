@@ -139,10 +139,10 @@ class HomeViewModelTest {
             )
         )
 
-        val mockContext: Context = org.mockito.Mockito.mock(Context::class.java)
-        val mockUri: Uri = org.mockito.Mockito.mock(Uri::class.java)
+        val fakeContext = FakeContext()
+        val fakeUri = FakeUri("content://sample/app.apk")
 
-        viewModel.ingestLocalArtifact(mockUri, mockContext)
+        viewModel.ingestLocalArtifact(fakeUri, fakeContext)
 
         val state = viewModel.uiState.value.projectState
         assertTrue(state is ProjectState.ProjectLoaded)
@@ -158,6 +158,33 @@ class HomeViewModelTest {
 
         viewModel.onResetStateToEmpty()
         assertEquals(ProjectState.NoProject, viewModel.uiState.value.projectState)
+    }
+
+    private class FakeContext : android.content.ContextWrapper(null)
+
+    private class FakeUri(private val uriString: String) : Uri() {
+        override fun isHierarchical(): Boolean = false
+        override fun isRelative(): Boolean = false
+        override fun getScheme(): String? = null
+        override fun getSchemeSpecificPart(): String? = null
+        override fun getEncodedSchemeSpecificPart(): String? = null
+        override fun getAuthority(): String? = null
+        override fun getEncodedAuthority(): String? = null
+        override fun getUserInfo(): String? = null
+        override fun getEncodedUserInfo(): String? = null
+        override fun getHost(): String? = null
+        override fun getPort(): Int = -1
+        override fun getPath(): String? = null
+        override fun getEncodedPath(): String? = null
+        override fun getQuery(): String? = null
+        override fun getEncodedQuery(): String? = null
+        override fun getFragment(): String? = null
+        override fun getEncodedFragment(): String? = null
+        override fun getPathSegments(): List<String> = emptyList()
+        override fun getLastPathSegment(): String? = null
+        override fun buildUpon(): Builder? = null
+        override fun toString(): String = uriString
+        override fun compareTo(other: Uri?): Int = 0
     }
 
     // In-memory test fakes for deterministic unit verification

@@ -193,8 +193,17 @@ fun SourceTreeScreen(
                         singleLine = true,
                         shape = RoundedCornerShape(10.dp),
                         colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Navy900,
+                            unfocusedTextColor = Navy900,
+                            focusedPlaceholderColor = Slate400,
+                            unfocusedPlaceholderColor = Slate400,
                             focusedBorderColor = Navy900,
-                            unfocusedBorderColor = Slate200
+                            unfocusedBorderColor = Slate200,
+                            cursorColor = Navy900,
+                            focusedLeadingIconColor = Navy900,
+                            unfocusedLeadingIconColor = Slate400,
+                            focusedTrailingIconColor = Navy900,
+                            unfocusedTrailingIconColor = Slate400
                         )
                     )
 
