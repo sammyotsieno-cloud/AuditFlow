@@ -1,7 +1,5 @@
 package com.auditflow.app.presentation.home
 
-import android.content.Context
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.auditflow.app.domain.model.ProjectState
@@ -45,20 +43,19 @@ class HomeViewModel(
         initialValue = HomeUiState(projectState = ProjectState.NoProject)
     )
 
-    fun ingestLocalProject(treeUri: Uri, context: Context) {
+    fun ingestLocalProject(treeUriString: String) {
         viewModelScope.launch {
             projectStateRepository.setProjectLoading(
-                source = treeUri.toString(),
+                source = treeUriString,
                 progress = 5,
                 statusMessage = "Opening local directory..."
             )
             val result = projectIngestionRepository.ingestLocalDirectory(
-                treeUri = treeUri,
-                context = context,
+                treeUriString = treeUriString,
                 onProgress = { progress, msg ->
                     viewModelScope.launch {
                         projectStateRepository.setProjectLoading(
-                            source = treeUri.toString(),
+                            source = treeUriString,
                             progress = progress,
                             statusMessage = msg
                         )
@@ -80,20 +77,19 @@ class HomeViewModel(
         }
     }
 
-    fun ingestLocalArtifact(fileUri: Uri, context: Context) {
+    fun ingestLocalArtifact(fileUriString: String) {
         viewModelScope.launch {
             projectStateRepository.setProjectLoading(
-                source = fileUri.toString(),
+                source = fileUriString,
                 progress = 5,
                 statusMessage = "Opening local artifact..."
             )
             val result = projectIngestionRepository.ingestLocalFile(
-                fileUri = fileUri,
-                context = context,
+                fileUriString = fileUriString,
                 onProgress = { progress, msg ->
                     viewModelScope.launch {
                         projectStateRepository.setProjectLoading(
-                            source = fileUri.toString(),
+                            source = fileUriString,
                             progress = progress,
                             statusMessage = msg
                         )

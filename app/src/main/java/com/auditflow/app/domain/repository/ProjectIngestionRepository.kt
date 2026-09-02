@@ -1,7 +1,5 @@
 package com.auditflow.app.domain.repository
 
-import android.content.Context
-import android.net.Uri
 import com.auditflow.app.domain.model.ProjectMetadata
 import com.auditflow.app.domain.model.SourceFileNode
 
@@ -19,8 +17,7 @@ interface ProjectIngestionRepository {
      * Enumerates actual directory structure and extracts file metadata.
      */
     suspend fun ingestLocalDirectory(
-        treeUri: Uri,
-        context: Context,
+        treeUriString: String,
         onProgress: (Int, String) -> Unit = { _, _ -> }
     ): Result<Pair<ProjectMetadata, List<SourceFileNode>>>
 
@@ -29,8 +26,7 @@ interface ProjectIngestionRepository {
      * Identifies the artifact type, selects the appropriate extractor, and preserves artifact-specific metadata.
      */
     suspend fun ingestLocalFile(
-        fileUri: Uri,
-        context: Context,
+        fileUriString: String,
         onProgress: (Int, String) -> Unit = { _, _ -> }
     ): Result<Pair<ProjectMetadata, List<SourceFileNode>>>
 
@@ -49,7 +45,6 @@ interface ProjectIngestionRepository {
      */
     suspend fun readFileContent(
         projectMetadata: ProjectMetadata,
-        relativePath: String,
-        context: Context? = null
+        relativePath: String
     ): Result<String>
 }

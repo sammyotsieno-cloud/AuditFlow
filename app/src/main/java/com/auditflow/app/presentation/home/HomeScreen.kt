@@ -83,7 +83,6 @@ fun HomeScreen(
     onNavigateToDestination: (AuditFlowDestination) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
     val scrollState = rememberScrollState()
 
     // SAF Directory Picker Launcher for local project ingestion
@@ -91,7 +90,7 @@ fun HomeScreen(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         if (uri != null) {
-            viewModel.ingestLocalProject(uri, context)
+            viewModel.ingestLocalProject(uri.toString())
         }
     }
 
@@ -100,7 +99,7 @@ fun HomeScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            viewModel.ingestLocalArtifact(uri, context)
+            viewModel.ingestLocalArtifact(uri.toString())
         }
     }
 

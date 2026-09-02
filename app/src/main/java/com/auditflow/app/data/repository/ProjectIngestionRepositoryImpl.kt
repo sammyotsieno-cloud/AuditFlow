@@ -34,18 +34,26 @@ import java.util.zip.ZipInputStream
  *
  * Invariant: Never fabricates synthetic file trees or mock data.
  */
-class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
+class ProjectIngestionRepositoryImpl(
+    private val context: Context? = null
+) : ProjectIngestionRepository {
+
+    private val appContext: Context
+        get() = context
+            ?: com.auditflow.app.AuditFlowApplication.instanceOrNull?.applicationContext
+            ?: throw IllegalStateException("Android Context required for local SAF operations")
 
     override suspend fun ingestLocalDirectory(
-        treeUri: Uri,
-        context: Context,
+        treeUriString: String,
         onProgress: (Int, String) -> Unit
     ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> = withContext(Dispatchers.IO) {
         try {
+            val localContext = appContext
+            val treeUri = Uri.parse(treeUriString)
             // Persist URI read permissions
             try {
                 val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                context.contentResolver.takePersistableUriPermission(treeUri, takeFlags)
+                localContext.contentResolver.takePersistableUriPermission(treeUri, takeFlags)
             } catch (ignored: Exception) {
                 // Best effort for persisted URI permissions
             }
@@ -57,14 +65,14 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
 
             onProgress(10, "Accessing local directory...")
 
-            val rootName = resolveDocumentDisplayName(context, treeUri, rootDocId) ?: "local_project"
+            val rootName = resolveDocumentDisplayName(localContext, treeUri, rootDocId) ?: "local_project"
             val fileNodes = mutableListOf<SourceFileNode>()
 
             onProgress(25, "Enumerating directory contents...")
 
             // Recursively traverse SAF directory tree
             traverseDirectoryTree(
-                context = context,
+                context = localContext,
                 treeUri = treeUri,
                 parentDocId = rootDocId,
                 parentPath = "",
@@ -87,7 +95,7 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
 
             val metadata = ProjectMetadata(
                 name = rootName,
-                pathOrUri = treeUri.toString(),
+                pathOrUri = treeUriString,
                 sourceKind = ProjectSourceKind.LOCAL_DIRECTORY,
                 fileCount = fileCount,
                 totalSizeBytes = totalSize,
@@ -102,26 +110,27 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
     }
 
     override suspend fun ingestLocalFile(
-        fileUri: Uri,
-        context: Context,
+        fileUriString: String,
         onProgress: (Int, String) -> Unit
     ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> = withContext(Dispatchers.IO) {
         try {
+            val localContext = appContext
+            val fileUri = Uri.parse(fileUriString)
             try {
                 val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                context.contentResolver.takePersistableUriPermission(fileUri, takeFlags)
+                localContext.contentResolver.takePersistableUriPermission(fileUri, takeFlags)
             } catch (ignored: Exception) {
             }
 
             onProgress(5, "Resolving local file...")
 
-            val fileName = queryFileName(context, fileUri) ?: "artifact"
-            val fileSize = queryFileSize(context, fileUri) ?: 0L
+            val fileName = queryFileName(localContext, fileUri) ?: "artifact"
+            val fileSize = queryFileSize(localContext, fileUri) ?: 0L
 
             onProgress(15, "Reading artifact header...")
 
             val headerBytes = ByteArray(8)
-            context.contentResolver.openInputStream(fileUri)?.use { stream ->
+            localContext.contentResolver.openInputStream(fileUri)?.use { stream ->
                 stream.read(headerBytes)
             }
 
@@ -131,7 +140,7 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
             if (isApk || isZip || fileName.endsWith(".zip", ignoreCase = true)) {
                 onProgress(30, "Analyzing artifact structure...")
 
-                val inputStream = context.contentResolver.openInputStream(fileUri)
+                val inputStream = localContext.contentResolver.openInputStream(fileUri)
                     ?: return@withContext Result.failure(
                         IllegalStateException("Unable to open input stream for URI: $fileUri")
                     )
@@ -419,8 +428,7 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
 
     override suspend fun readFileContent(
         projectMetadata: ProjectMetadata,
-        relativePath: String,
-        context: Context?
+        relativePath: String
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val normalizedPath = RelativePathHelper.normalize(relativePath)
@@ -452,11 +460,7 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
                     }
                 }
                 ProjectSourceKind.LOCAL_DIRECTORY -> {
-                    if (context == null) {
-                        return@withContext Result.failure(
-                            IllegalStateException("Local file inspection requires a valid Android Context")
-                        )
-                    }
+                    val localContext = appContext
                     val treeUri = Uri.parse(projectMetadata.pathOrUri)
                     val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
                         ?: return@withContext Result.failure(
@@ -464,7 +468,7 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
                         )
 
                     // Find and open document
-                    val content = readLocalSafFile(context, treeUri, rootDocId, normalizedPath)
+                    val content = readLocalSafFile(localContext, treeUri, rootDocId, normalizedPath)
                     if (content != null) {
                         Result.success(content)
                     } else {
@@ -474,13 +478,9 @@ class ProjectIngestionRepositoryImpl : ProjectIngestionRepository {
                     }
                 }
                 ProjectSourceKind.LOCAL_FILE -> {
-                    if (context == null) {
-                        return@withContext Result.failure(
-                            IllegalStateException("Local artifact inspection requires a valid Android Context")
-                        )
-                    }
+                    val localContext = appContext
                     val fileUri = Uri.parse(projectMetadata.pathOrUri)
-                    val inputStream = context.contentResolver.openInputStream(fileUri)
+                    val inputStream = localContext.contentResolver.openInputStream(fileUri)
                         ?: return@withContext Result.failure(
                             IllegalStateException("Cannot open input stream for '$fileUri'")
                         )

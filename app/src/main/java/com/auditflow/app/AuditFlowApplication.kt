@@ -29,7 +29,7 @@ class AuditFlowApplication : Application() {
     }
 
     val projectIngestionRepository: ProjectIngestionRepository by lazy {
-        ProjectIngestionRepositoryImpl()
+        ProjectIngestionRepositoryImpl(applicationContext)
     }
 
     init {

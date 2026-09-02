@@ -87,7 +87,6 @@ fun ProjectInputScreen(
     onNavigateToSourceTree: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val scrollState = rememberScrollState()
 
@@ -100,7 +99,7 @@ fun ProjectInputScreen(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         if (uri != null) {
-            viewModel.ingestLocalProject(uri, context)
+            viewModel.ingestLocalProject(uri.toString())
         }
     }
 

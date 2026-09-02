@@ -1,7 +1,5 @@
 package com.auditflow.app.presentation
 
-import android.content.Context
-import android.net.Uri
 import com.auditflow.app.domain.model.ProjectMetadata
 import com.auditflow.app.domain.model.ProjectSourceKind
 import com.auditflow.app.domain.model.ProjectState
@@ -139,10 +137,7 @@ class HomeViewModelTest {
             )
         )
 
-        val fakeContext = FakeContext()
-        val sampleUri = Uri.parse("content://sample/app.apk")
-
-        viewModel.ingestLocalArtifact(sampleUri, fakeContext)
+        viewModel.ingestLocalArtifact("content://sample/app.apk")
 
         val state = viewModel.uiState.value.projectState
         assertTrue(state is ProjectState.ProjectLoaded)
@@ -159,8 +154,6 @@ class HomeViewModelTest {
         viewModel.onResetStateToEmpty()
         assertEquals(ProjectState.NoProject, viewModel.uiState.value.projectState)
     }
-
-    private class FakeContext : android.content.ContextWrapper(null)
 
     // In-memory test fakes for deterministic unit verification
     private class FakeProjectStateRepository : ProjectStateRepository {
@@ -207,14 +200,12 @@ class HomeViewModelTest {
         var fileContentResult: Result<String> = Result.failure(NotImplementedError())
 
         override suspend fun ingestLocalDirectory(
-            treeUri: Uri,
-            context: Context,
+            treeUriString: String,
             onProgress: (Int, String) -> Unit
         ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> = localResult
 
         override suspend fun ingestLocalFile(
-            fileUri: Uri,
-            context: Context,
+            fileUriString: String,
             onProgress: (Int, String) -> Unit
         ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> = localFileResult
 
@@ -226,8 +217,7 @@ class HomeViewModelTest {
 
         override suspend fun readFileContent(
             projectMetadata: ProjectMetadata,
-            relativePath: String,
-            context: Context?
+            relativePath: String
         ): Result<String> = fileContentResult
     }
 }
