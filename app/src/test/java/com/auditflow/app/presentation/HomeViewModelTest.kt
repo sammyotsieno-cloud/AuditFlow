@@ -140,9 +140,9 @@ class HomeViewModelTest {
         )
 
         val fakeContext = FakeContext()
-        val fakeUri = FakeUri("content://sample/app.apk")
+        val sampleUri = Uri.parse("content://sample/app.apk")
 
-        viewModel.ingestLocalArtifact(fakeUri, fakeContext)
+        viewModel.ingestLocalArtifact(sampleUri, fakeContext)
 
         val state = viewModel.uiState.value.projectState
         assertTrue(state is ProjectState.ProjectLoaded)
@@ -161,31 +161,6 @@ class HomeViewModelTest {
     }
 
     private class FakeContext : android.content.ContextWrapper(null)
-
-    private class FakeUri(private val uriString: String) : Uri() {
-        override fun isHierarchical(): Boolean = false
-        override fun isRelative(): Boolean = false
-        override fun getScheme(): String? = null
-        override fun getSchemeSpecificPart(): String? = null
-        override fun getEncodedSchemeSpecificPart(): String? = null
-        override fun getAuthority(): String? = null
-        override fun getEncodedAuthority(): String? = null
-        override fun getUserInfo(): String? = null
-        override fun getEncodedUserInfo(): String? = null
-        override fun getHost(): String? = null
-        override fun getPort(): Int = -1
-        override fun getPath(): String? = null
-        override fun getEncodedPath(): String? = null
-        override fun getQuery(): String? = null
-        override fun getEncodedQuery(): String? = null
-        override fun getFragment(): String? = null
-        override fun getEncodedFragment(): String? = null
-        override fun getPathSegments(): List<String> = emptyList()
-        override fun getLastPathSegment(): String? = null
-        override fun buildUpon(): Builder? = null
-        override fun toString(): String = uriString
-        override fun compareTo(other: Uri?): Int = 0
-    }
 
     // In-memory test fakes for deterministic unit verification
     private class FakeProjectStateRepository : ProjectStateRepository {
