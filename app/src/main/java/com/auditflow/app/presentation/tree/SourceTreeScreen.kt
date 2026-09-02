@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
@@ -46,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -71,7 +74,33 @@ fun SourceTreeScreen(
     onNavigateToProjectInput: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val clipboardManager = LocalClipboardManager.current
     var searchQuery by remember { mutableStateOf("") }
+
+    val loadedState = uiState.projectState as? ProjectState.ProjectLoaded
+
+    val fullTreeRoot = remember(loadedState?.metadata?.name, loadedState?.files) {
+        loadedState?.let {
+            ProjectTreeReconstructor.reconstruct(it.metadata.name, it.files)
+        }
+    }
+
+    val allTreeLines = remember(fullTreeRoot) {
+        fullTreeRoot?.let {
+            ProjectTreeReconstructor.generateTreeLines(it)
+        } ?: emptyList()
+    }
+
+    val displayedLines = remember(allTreeLines, searchQuery) {
+        if (searchQuery.isBlank()) {
+            allTreeLines
+        } else {
+            allTreeLines.filter {
+                it.displayName.contains(searchQuery, ignoreCase = true) ||
+                        it.relativePath.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -94,6 +123,24 @@ fun SourceTreeScreen(
                         )
                     }
                 },
+                actions = {
+                    if (allTreeLines.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                val treeText = allTreeLines.joinToString("\n") { line ->
+                                    "${line.prefix}${line.displayName}"
+                                }
+                                clipboardManager.setText(AnnotatedString(treeText))
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Copy source tree",
+                                tint = Navy900
+                            )
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = Slate50
                 )
@@ -103,25 +150,6 @@ fun SourceTreeScreen(
     ) { paddingValues ->
         when (val state = uiState.projectState) {
             is ProjectState.ProjectLoaded -> {
-                val fullTreeRoot = remember(state.metadata.name, state.files) {
-                    ProjectTreeReconstructor.reconstruct(state.metadata.name, state.files)
-                }
-
-                val allTreeLines = remember(fullTreeRoot) {
-                    ProjectTreeReconstructor.generateTreeLines(fullTreeRoot)
-                }
-
-                val displayedLines = remember(allTreeLines, searchQuery) {
-                    if (searchQuery.isBlank()) {
-                        allTreeLines
-                    } else {
-                        allTreeLines.filter {
-                            it.displayName.contains(searchQuery, ignoreCase = true) ||
-                                    it.relativePath.contains(searchQuery, ignoreCase = true)
-                        }
-                    }
-                }
-
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
