@@ -13,8 +13,8 @@ export const PhysicalTestPlanModal: React.FC<PhysicalTestPlanModalProps> = ({ is
     {
       num: 1,
       title: 'INSTALL & LAUNCH',
-      action: 'Download the auditflow-debug-apk artifact, transfer to an Android device (API 24+), and launch AuditFlow.',
-      expected: 'AuditFlow launches cleanly without crashing, displays the title "AUDITFLOW", and sets up top bar.'
+      action: 'Launch AuditFlow on an Android device (API 24+) or the live simulated Compose viewport.',
+      expected: 'AuditFlow launches cleanly without crashing, displaying the title "AUDITFLOW" and Phase 1B status.'
     },
     {
       num: 2,
@@ -24,33 +24,33 @@ export const PhysicalTestPlanModal: React.FC<PhysicalTestPlanModalProps> = ({ is
     },
     {
       num: 3,
-      title: 'LOCAL PROJECT ENTRY POINT',
-      action: 'Tap the [ LOCAL PROJECT ] button on the home screen.',
-      expected: 'Displays the honest NOT IMPLEMENTED YET dialog explaining that local ingest is targeted for the subsequent input phase.'
+      title: 'GITHUB REPOSITORY INPUT NAVIGATION',
+      action: 'Tap the [ GITHUB REPOSITORY ] button on the home screen.',
+      expected: 'Navigates directly to ProjectInputScreen (route: project_input) with real input fields and quick presets.'
     },
     {
       num: 4,
-      title: 'GITHUB REPOSITORY ENTRY POINT',
-      action: 'Tap the [ GITHUB REPOSITORY ] button on the home screen.',
-      expected: 'Displays the honest NOT IMPLEMENTED YET dialog with zero synthetic repository data generated.'
+      title: 'IMMUTABLE GIT TREE INGESTION',
+      action: 'Enter a valid GitHub repository (e.g. octocat/Hello-World, square/retrofit, or custom repo) and tap [ INGEST REPOSITORY ].',
+      expected: 'Fetches the remote recursive Git tree directly from GitHub API, computes exact node sizes, and loads physical metadata without fabrication.'
     },
     {
       num: 5,
-      title: 'NAVIGATION TO FUTURE DESTINATIONS',
-      action: 'Tap any future milestone route in the list (e.g., "Audit", "Workflow", "Evidence").',
-      expected: 'Navigates to the corresponding screen displaying clear NOT IMPLEMENTED YET status and a button to return home.'
+      title: 'SOURCE TREE HIERARCHY RENDERING',
+      action: 'Tap [ VIEW SOURCE TREE ] to open SourceTreeScreen.',
+      expected: 'Renders the complete physical tree: directories first, sorted alphabetically, with monospace prefixes (├──, └──, │   ), trailing slashes, and exact byte sizes.'
     },
     {
       num: 6,
-      title: 'ACTIVITY RECREATION / PROCESS RESTART',
-      action: 'Rotate the device (or force activity recreation) and reopen the application.',
-      expected: 'Application state remains deterministic (NoProject) without creating phantom project state.'
+      title: 'PATH INTEGRITY & SEARCH FILTER',
+      action: 'Type a filename or directory name into the search bar.',
+      expected: 'Accurately filters nodes in real time, preserves relative path integrity, and allows selecting files to verify AST decomposition readiness.'
     },
     {
       num: 7,
-      title: 'GITHUB ACTIONS MANUAL WORKFLOW DISPATCH',
-      action: 'Navigate to GitHub Actions -> AuditFlow Build -> Run workflow -> wait for completion -> download auditflow-debug-apk.',
-      expected: 'A reproducible, valid APK artifact is compiled and made downloadable.'
+      title: 'RESET / UNLOAD REPOSITORY',
+      action: 'Tap [ Unload ] or reset state.',
+      expected: 'Deterministic return to empty state without lingering phantom references or data corruption.'
     }
   ];
 
@@ -71,8 +71,8 @@ export const PhysicalTestPlanModal: React.FC<PhysicalTestPlanModalProps> = ({ is
               <Smartphone className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900">Physical APK Testing Plan (Phase 1A)</h3>
-              <p className="text-xs text-slate-500">Step-by-step verification protocol for QA &amp; device verification</p>
+              <h3 className="text-base font-bold text-slate-900">Physical Repository Tree Testing Plan (Phase 1B)</h3>
+              <p className="text-xs text-slate-500">Step-by-step verification protocol for QA &amp; repository ingestion</p>
             </div>
           </div>
 

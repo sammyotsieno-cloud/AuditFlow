@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import { ProjectState, NAV_DESTINATIONS, NavDestination } from './types';
 import { ComposeHomeScreen } from './components/ComposeHomeScreen';
+import { ProjectInputScreen } from './components/ProjectInputScreen';
+import { SourceTreeScreen } from './components/SourceTreeScreen';
 import { NotImplementedScreen } from './components/NotImplementedScreen';
 import { NotImplementedDialog } from './components/NotImplementedDialog';
 import { ArchitectureInspector } from './components/ArchitectureInspector';
@@ -57,10 +59,10 @@ export default function App() {
   };
 
   const handleGitHubRepoClick = () => {
-    setDialogState({
-      isOpen: true,
-      featureTitle: 'GitHub Repository Ingestion',
-    });
+    const inputDest = NAV_DESTINATIONS.find((d) => d.id === 'project_input');
+    if (inputDest) {
+      setCurrentDestination(inputDest);
+    }
   };
 
   const handleNavigateToDestination = (dest: NavDestination) => {
@@ -89,10 +91,10 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <span className="text-base font-bold tracking-wider text-white">AUDITFLOW</span>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-950 text-blue-400 border border-blue-800">
-                  PHASE 1A
+                  PHASE 1B
                 </span>
               </div>
-              <p className="text-xs text-slate-400">Android Foundation &amp; Build Infrastructure</p>
+              <p className="text-xs text-slate-400">Android Foundation &amp; Repository Ingestion Tree</p>
             </div>
           </div>
 
@@ -230,19 +232,75 @@ export default function App() {
 
               {/* Compose Screen Viewport */}
               <div className="flex-1 overflow-y-auto relative bg-slate-50">
-                {currentDestination.id === 'home' ? (
+                {currentDestination.id === 'home' && (
                   <ComposeHomeScreen
                     projectState={projectState}
                     onLocalProjectClick={handleLocalProjectClick}
                     onGitHubRepoClick={handleGitHubRepoClick}
                     onNavigateToDestination={handleNavigateToDestination}
-                  />
-                ) : (
-                  <NotImplementedScreen
-                    destination={currentDestination}
-                    onNavigateBack={handleNavigateBack}
+                    onUnloadProject={handleResetState}
                   />
                 )}
+                {currentDestination.id === 'project_input' && (
+                  <ProjectInputScreen
+                    projectState={projectState}
+                    onNavigateBack={handleNavigateBack}
+                    onNavigateToSourceTree={() => {
+                      const treeDest = NAV_DESTINATIONS.find((d) => d.id === 'source_tree');
+                      if (treeDest) setCurrentDestination(treeDest);
+                    }}
+                    onStartLoading={(source) => {
+                      setProjectState({
+                        kind: 'ProjectLoading',
+                        source,
+                        statusMessage: 'Connecting to GitHub API...',
+                        progressPercentage: 15,
+                      });
+                    }}
+                    onUpdateLoadingProgress={(statusMessage, progressPercentage) => {
+                      setProjectState((prev) =>
+                        prev.kind === 'ProjectLoading'
+                          ? { ...prev, statusMessage, progressPercentage }
+                          : prev
+                      );
+                    }}
+                    onProjectLoaded={(metadata, files, inspections, resolutionResult, decomposedTreeRoot) => {
+                      setProjectState({
+                        kind: 'ProjectLoaded',
+                        metadata,
+                        files,
+                        inspections,
+                        resolutionResult,
+                        decomposedTreeRoot,
+                      });
+                    }}
+                    onError={(message) => {
+                      setProjectState({
+                        kind: 'Error',
+                        message,
+                      });
+                    }}
+                    onResetState={handleResetState}
+                  />
+                )}
+                {currentDestination.id === 'source_tree' && (
+                  <SourceTreeScreen
+                    projectState={projectState}
+                    onNavigateBack={handleNavigateBack}
+                    onNavigateToProjectInput={() => {
+                      const inputDest = NAV_DESTINATIONS.find((d) => d.id === 'project_input');
+                      if (inputDest) setCurrentDestination(inputDest);
+                    }}
+                  />
+                )}
+                {currentDestination.id !== 'home' &&
+                  currentDestination.id !== 'project_input' &&
+                  currentDestination.id !== 'source_tree' && (
+                    <NotImplementedScreen
+                      destination={currentDestination}
+                      onNavigateBack={handleNavigateBack}
+                    />
+                  )}
               </div>
 
               {/* Android Gesture Bar */}

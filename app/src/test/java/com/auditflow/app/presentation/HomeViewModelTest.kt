@@ -1,5 +1,7 @@
 package com.auditflow.app.presentation
 
+import com.auditflow.app.domain.model.ContentAvailabilityState
+import com.auditflow.app.domain.model.ParsingStatus
 import com.auditflow.app.domain.model.ProjectMetadata
 import com.auditflow.app.domain.model.ProjectSourceKind
 import com.auditflow.app.domain.model.ProjectState
@@ -153,6 +155,164 @@ class HomeViewModelTest {
 
         viewModel.onResetStateToEmpty()
         assertEquals(ProjectState.NoProject, viewModel.uiState.value.projectState)
+    }
+
+    @Test
+    fun inspectFile_withLoadedProjectAndValidContent_returnsInspectionResult() = runTest {
+        val node = SourceFileNode(
+            relativePath = "app/src/main/MainActivity.kt",
+            name = "MainActivity.kt",
+            extension = "kt",
+            sizeBytes = 128L,
+            isDirectory = false
+        )
+        fakeProjectIngestionRepository.githubResult = Result.success(
+            Pair(
+                ProjectMetadata(
+                    name = "AuditFlow",
+                    pathOrUri = "https://github.com/auditflow/app",
+                    sourceKind = ProjectSourceKind.GITHUB_REPOSITORY,
+                    fileCount = 1,
+                    totalSizeBytes = 128L
+                ),
+                listOf(node)
+            )
+        )
+        viewModel.ingestGitHubRepository("auditflow/app")
+
+        val kotlinSource = """
+            package com.auditflow.app
+
+            import android.os.Bundle
+
+            class MainActivity {
+                fun onCreate() {}
+            }
+        """.trimIndent()
+        fakeProjectIngestionRepository.fileContentResult = Result.success(kotlinSource)
+
+        val result = viewModel.inspectFile(node)
+
+        assertTrue(result.isSuccess)
+        val inspection = result.getOrNull()!!
+        assertEquals("app/src/main/MainActivity.kt", inspection.relativePath)
+        assertEquals(ParsingStatus.SUCCESS, inspection.parsingStatus)
+        assertEquals("com.auditflow.app", inspection.declaredPackage)
+        assertEquals(1, inspection.imports.size)
+        assertEquals("android.os.Bundle", inspection.imports[0].importedIdentifier)
+        assertEquals(1, inspection.topLevelSymbols.size)
+        assertEquals("MainActivity", inspection.topLevelSymbols[0].simpleName)
+        assertEquals(ContentAvailabilityState.AVAILABLE_LOADED, inspection.contentAvailability)
+        assertEquals(1, viewModel.fileInspections.value.size)
+        assertEquals(inspection, viewModel.fileInspections.value[node.relativePath])
+    }
+
+    @Test
+    fun inspectFile_withoutLoadedProject_returnsFailure() = runTest {
+        val node = SourceFileNode(
+            relativePath = "README.md",
+            name = "README.md",
+            extension = "md",
+            sizeBytes = 64L,
+            isDirectory = false
+        )
+        val result = viewModel.inspectFile(node)
+        assertTrue(result.isFailure)
+        assertEquals(0, viewModel.fileInspections.value.size)
+    }
+
+    @Test
+    fun inspectFile_withDirectoryNode_returnsFailure() = runTest {
+        val dirNode = SourceFileNode(
+            relativePath = "app/src",
+            name = "src",
+            extension = "",
+            sizeBytes = 0L,
+            isDirectory = true
+        )
+        fakeProjectIngestionRepository.githubResult = Result.success(
+            Pair(
+                ProjectMetadata(
+                    name = "AuditFlow",
+                    pathOrUri = "https://github.com/auditflow/app",
+                    sourceKind = ProjectSourceKind.GITHUB_REPOSITORY,
+                    fileCount = 1,
+                    totalSizeBytes = 0L
+                ),
+                listOf(dirNode)
+            )
+        )
+        viewModel.ingestGitHubRepository("auditflow/app")
+
+        val result = viewModel.inspectFile(dirNode)
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test
+    fun inspectFile_withFailedContentRetrieval_returnsFailureAndRecordsUnavailableState() = runTest {
+        val node = SourceFileNode(
+            relativePath = "Missing.kt",
+            name = "Missing.kt",
+            extension = "kt",
+            sizeBytes = 100L,
+            isDirectory = false
+        )
+        fakeProjectIngestionRepository.githubResult = Result.success(
+            Pair(
+                ProjectMetadata(
+                    name = "AuditFlow",
+                    pathOrUri = "https://github.com/auditflow/app",
+                    sourceKind = ProjectSourceKind.GITHUB_REPOSITORY,
+                    fileCount = 1,
+                    totalSizeBytes = 100L
+                ),
+                listOf(node)
+            )
+        )
+        viewModel.ingestGitHubRepository("auditflow/app")
+
+        fakeProjectIngestionRepository.fileContentResult = Result.failure(
+            java.io.IOException("Network timeout")
+        )
+
+        val result = viewModel.inspectFile(node)
+        assertTrue(result.isFailure)
+        val recorded = viewModel.fileInspections.value[node.relativePath]
+        assertTrue(recorded != null)
+        assertEquals(ContentAvailabilityState.UNAVAILABLE_NOT_FETCHED, recorded?.contentAvailability)
+        assertEquals(ParsingStatus.UNAVAILABLE_CONTENT, recorded?.parsingStatus)
+    }
+
+    @Test
+    fun onResetStateToEmpty_clearsInspectionsAndTransitionsBackToNoProject() = runTest {
+        val node = SourceFileNode(
+            relativePath = "Sample.kt",
+            name = "Sample.kt",
+            extension = "kt",
+            sizeBytes = 50L,
+            isDirectory = false
+        )
+        fakeProjectIngestionRepository.githubResult = Result.success(
+            Pair(
+                ProjectMetadata(
+                    name = "AuditFlow",
+                    pathOrUri = "https://github.com/auditflow/app",
+                    sourceKind = ProjectSourceKind.GITHUB_REPOSITORY,
+                    fileCount = 1,
+                    totalSizeBytes = 50L
+                ),
+                listOf(node)
+            )
+        )
+        viewModel.ingestGitHubRepository("auditflow/app")
+        fakeProjectIngestionRepository.fileContentResult = Result.success("val x = 1")
+        viewModel.inspectFile(node)
+        assertEquals(1, viewModel.fileInspections.value.size)
+
+        viewModel.onResetStateToEmpty()
+        assertEquals(ProjectState.NoProject, viewModel.uiState.value.projectState)
+        assertEquals(0, viewModel.fileInspections.value.size)
     }
 
     // In-memory test fakes for deterministic unit verification

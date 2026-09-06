@@ -26,6 +26,7 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.zip.ZipInputStream
 
 /**
@@ -434,12 +435,17 @@ class ProjectIngestionRepositoryImpl(
             val normalizedPath = RelativePathHelper.normalize(relativePath)
             when (projectMetadata.sourceKind) {
                 ProjectSourceKind.GITHUB_REPOSITORY -> {
-                    val parsed = GitHubUrlParser.parse(projectMetadata.name)
+                    val parsed = GitHubUrlParser.parse(projectMetadata.pathOrUri)
+                        ?: GitHubUrlParser.parse(projectMetadata.name)
                         ?: return@withContext Result.failure(
-                            IllegalArgumentException("Cannot parse GitHub repository coordinates from '${projectMetadata.name}'")
+                            IllegalArgumentException("Cannot parse GitHub repository coordinates from '${projectMetadata.pathOrUri}' or '${projectMetadata.name}'")
                         )
+                    val targetBranch = projectMetadata.branchOrTag?.takeIf { it.isNotBlank() } ?: parsed.branch ?: "main"
+                    val encodedPath = normalizedPath.split("/").joinToString("/") { segment ->
+                        URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
+                    }
                     // Fetch raw file from GitHub
-                    val rawUrl = "https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/main/$normalizedPath"
+                    val rawUrl = "https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/$targetBranch/$encodedPath"
                     val url = URL(rawUrl)
                     val conn = url.openConnection() as HttpURLConnection
                     try {
