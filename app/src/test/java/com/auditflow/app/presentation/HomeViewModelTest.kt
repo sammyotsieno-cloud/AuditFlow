@@ -305,6 +305,11 @@ class HomeViewModelTest {
 
         assertEquals(
             "android.os.Bundle",
+            inspection.imports[0].importPath
+        )
+
+        assertEquals(
+            "Bundle",
             inspection.imports[0].importedSymbolName
         )
 
