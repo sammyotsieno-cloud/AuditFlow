@@ -39,16 +39,30 @@ class GitHubFileInspectionBridgeTest {
         val repoRef = GitHubUrlParser.parse(metadata.pathOrUri)
             ?: GitHubUrlParser.parse(metadata.name)
 
-        assertNotNull("Coordinates must be resolvable from pathOrUri", repoRef)
-        assertEquals("auditflow", repoRef!!.owner)
-        assertEquals("app", repoRef.repo)
+        assertNotNull(
+            "Coordinates must be resolvable from pathOrUri",
+            repoRef
+        )
+
+        assertEquals(
+            "auditflow",
+            repoRef!!.owner
+        )
+
+        assertEquals(
+            "app",
+            repoRef.repo
+        )
 
         val targetBranch =
             metadata.branchOrTag?.takeIf { it.isNotBlank() }
                 ?: repoRef.branch
                 ?: "main"
 
-        assertEquals("develop", targetBranch)
+        assertEquals(
+            "develop",
+            targetBranch
+        )
 
         val relativePath =
             "app/src/main/java/com/auditflow/MainActivity.kt"
@@ -58,7 +72,13 @@ class GitHubFileInspectionBridgeTest {
 
         val encodedPath =
             normalizedPath.split("/").joinToString("/") { segment ->
-                URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
+                URLEncoder.encode(
+                    segment,
+                    "UTF-8"
+                ).replace(
+                    "+",
+                    "%20"
+                )
             }
 
         val expectedRawUrl =
@@ -67,7 +87,10 @@ class GitHubFileInspectionBridgeTest {
         val constructedRawUrl =
             "https://raw.githubusercontent.com/${repoRef.owner}/${repoRef.repo}/$targetBranch/$encodedPath"
 
-        assertEquals(expectedRawUrl, constructedRawUrl)
+        assertEquals(
+            expectedRawUrl,
+            constructedRawUrl
+        )
     }
 
     @Test
@@ -96,7 +119,6 @@ class GitHubFileInspectionBridgeTest {
             }
         """.trimIndent()
 
-        // Execute Station 3 inspection via canonical entry point
         val result =
             FileInspectionStation.inspectFile(
                 sourceNode,
@@ -133,19 +155,50 @@ class GitHubFileInspectionBridgeTest {
             result.packageDiscrepancy
         )
 
-        assertEquals(2, result.imports.size)
+        assertEquals(
+            2,
+            result.imports.size
+        )
 
+        /*
+         * ImportDeclaration has two distinct concepts:
+         *
+         * importPath:
+         *     complete imported path
+         *
+         * importedSymbolName:
+         *     final/simple symbol represented by the import
+         *
+         * The canonical parser intentionally stores:
+         * java.security.MessageDigest -> MessageDigest
+         * javax.crypto.Cipher         -> Cipher
+         *
+         * Therefore verify both the complete path and canonical symbol name.
+         */
         assertEquals(
             "java.security.MessageDigest",
+            result.imports[0].importPath
+        )
+
+        assertEquals(
+            "MessageDigest",
             result.imports[0].importedSymbolName
         )
 
         assertEquals(
             "javax.crypto.Cipher",
+            result.imports[1].importPath
+        )
+
+        assertEquals(
+            "Cipher",
             result.imports[1].importedSymbolName
         )
 
-        assertEquals(1, result.topLevelSymbols.size)
+        assertEquals(
+            1,
+            result.topLevelSymbols.size
+        )
 
         val classSymbol =
             result.topLevelSymbols[0]
@@ -200,7 +253,6 @@ class GitHubFileInspectionBridgeTest {
             isReadable = true
         )
 
-        // Inspection with unretrieved (null) content
         val result =
             FileInspectionStation.inspectFile(
                 sourceNode,
