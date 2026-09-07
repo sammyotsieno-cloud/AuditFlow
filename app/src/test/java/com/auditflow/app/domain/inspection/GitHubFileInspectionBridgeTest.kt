@@ -1,7 +1,7 @@
 package com.auditflow.app.domain.inspection
 
 import com.auditflow.app.domain.model.ArtifactIdentity
-import com.auditflow.app.domain.model.CodeSymbolType
+import com.auditflow.app.domain.model.CodeSymbolKind
 import com.auditflow.app.domain.model.ContentAvailabilityState
 import com.auditflow.app.domain.model.ParsingStatus
 import com.auditflow.app.domain.model.PathClassification
@@ -43,24 +43,38 @@ class GitHubFileInspectionBridgeTest {
         assertEquals("auditflow", repoRef!!.owner)
         assertEquals("app", repoRef.repo)
 
-        val targetBranch = metadata.branchOrTag?.takeIf { it.isNotBlank() } ?: repoRef.branch ?: "main"
+        val targetBranch =
+            metadata.branchOrTag?.takeIf { it.isNotBlank() }
+                ?: repoRef.branch
+                ?: "main"
+
         assertEquals("develop", targetBranch)
 
-        val relativePath = "app/src/main/java/com/auditflow/MainActivity.kt"
-        val normalizedPath = RelativePathHelper.normalize(relativePath)
-        val encodedPath = normalizedPath.split("/").joinToString("/") { segment ->
-            URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
-        }
+        val relativePath =
+            "app/src/main/java/com/auditflow/MainActivity.kt"
 
-        val expectedRawUrl = "https://raw.githubusercontent.com/auditflow/app/develop/app/src/main/java/com/auditflow/MainActivity.kt"
-        val constructedRawUrl = "https://raw.githubusercontent.com/${repoRef.owner}/${repoRef.repo}/$targetBranch/$encodedPath"
+        val normalizedPath =
+            RelativePathHelper.normalize(relativePath)
+
+        val encodedPath =
+            normalizedPath.split("/").joinToString("/") { segment ->
+                URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
+            }
+
+        val expectedRawUrl =
+            "https://raw.githubusercontent.com/auditflow/app/develop/app/src/main/java/com/auditflow/MainActivity.kt"
+
+        val constructedRawUrl =
+            "https://raw.githubusercontent.com/${repoRef.owner}/${repoRef.repo}/$targetBranch/$encodedPath"
+
         assertEquals(expectedRawUrl, constructedRawUrl)
     }
 
     @Test
     fun gitHubSourceFileNode_withRetrievedContent_producesCompleteInspectionResult() {
         val sourceNode = SourceFileNode(
-            relativePath = "app/src/main/java/com/auditflow/SecurityScanner.kt",
+            relativePath =
+                "app/src/main/java/com/auditflow/SecurityScanner.kt",
             name = "SecurityScanner.kt",
             extension = "kt",
             sizeBytes = 350L,
@@ -83,37 +97,102 @@ class GitHubFileInspectionBridgeTest {
         """.trimIndent()
 
         // Execute Station 3 inspection via canonical entry point
-        val result = FileInspectionStation.inspectFile(sourceNode, retrievedGitHubContent)
+        val result =
+            FileInspectionStation.inspectFile(
+                sourceNode,
+                retrievedGitHubContent
+            )
 
-        assertEquals("app/src/main/java/com/auditflow/SecurityScanner.kt", result.relativePath)
-        assertEquals(SemanticFileType.KOTLIN_SOURCE, result.semanticFileType)
-        assertEquals(ContentAvailabilityState.AVAILABLE_LOADED, result.contentAvailability)
-        assertEquals(ParsingStatus.SUCCESS, result.parsingStatus)
-        assertEquals("com.auditflow.security", result.declaredPackage)
-        assertTrue("Package discrepancy must be detected when relative path and package diverge", result.packageDiscrepancy)
+        assertEquals(
+            "app/src/main/java/com/auditflow/SecurityScanner.kt",
+            result.relativePath
+        )
+
+        assertEquals(
+            SemanticFileType.KOTLIN_SOURCE,
+            result.semanticFileType
+        )
+
+        assertEquals(
+            ContentAvailabilityState.AVAILABLE,
+            result.contentAvailability
+        )
+
+        assertEquals(
+            ParsingStatus.PARSED_SUCCESS,
+            result.parsingStatus
+        )
+
+        assertEquals(
+            "com.auditflow.security",
+            result.declaredPackage
+        )
+
+        assertTrue(
+            "Package discrepancy must be detected when relative path and package diverge",
+            result.packageDiscrepancy
+        )
 
         assertEquals(2, result.imports.size)
-        assertEquals("java.security.MessageDigest", result.imports[0].importedIdentifier)
-        assertEquals("javax.crypto.Cipher", result.imports[1].importedIdentifier)
+
+        assertEquals(
+            "java.security.MessageDigest",
+            result.imports[0].importedSymbolName
+        )
+
+        assertEquals(
+            "javax.crypto.Cipher",
+            result.imports[1].importedSymbolName
+        )
 
         assertEquals(1, result.topLevelSymbols.size)
-        val classSymbol = result.topLevelSymbols[0]
-        assertEquals("SecurityScanner", classSymbol.name)
-        assertEquals(CodeSymbolType.CLASS, classSymbol.symbolType)
 
-        assertEquals(1, classSymbol.childSymbols.size)
-        val funcSymbol = classSymbol.childSymbols[0]
-        assertEquals("computeHash", funcSymbol.name)
-        assertEquals(CodeSymbolType.FUNCTION, funcSymbol.symbolType)
+        val classSymbol =
+            result.topLevelSymbols[0]
 
-        assertNotNull("SHA-256 must be computed for retrieved content", result.contentSha256)
-        assertTrue(result.linesOfCode > 0)
+        assertEquals(
+            "SecurityScanner",
+            classSymbol.name
+        )
+
+        assertEquals(
+            CodeSymbolKind.CLASS,
+            classSymbol.kind
+        )
+
+        assertEquals(
+            1,
+            classSymbol.childSymbols.size
+        )
+
+        val funcSymbol =
+            classSymbol.childSymbols[0]
+
+        assertEquals(
+            "computeHash",
+            funcSymbol.name
+        )
+
+        assertEquals(
+            CodeSymbolKind.FUNCTION,
+            funcSymbol.kind
+        )
+
+        assertNotNull(
+            "SHA-256 must be computed for retrieved content",
+            result.contentSha256
+        )
+
+        assertTrue(
+            result.linesOfCode > 0
+        )
     }
 
     @Test
     fun gitHubSourceFileNode_whenContentRetrievalFails_producesTruthfulUnavailableResult() {
         val sourceNode = SourceFileNode(
-            relativePath = "app/src/main/java/com/auditflow/RemoteOnly.kt",
+            relativePath =
+                "app/src/main/java/com/auditflow/RemoteOnly.kt",
             name = "RemoteOnly.kt",
             extension = "kt",
             sizeBytes = 200L,
@@ -122,16 +201,46 @@ class GitHubFileInspectionBridgeTest {
         )
 
         // Inspection with unretrieved (null) content
-        val result = FileInspectionStation.inspectFile(sourceNode, null)
+        val result =
+            FileInspectionStation.inspectFile(
+                sourceNode,
+                null
+            )
 
-        assertEquals("app/src/main/java/com/auditflow/RemoteOnly.kt", result.relativePath)
-        assertEquals(ContentAvailabilityState.UNAVAILABLE_NOT_FETCHED, result.contentAvailability)
-        assertEquals(ParsingStatus.UNAVAILABLE_CONTENT, result.parsingStatus)
-        assertNull(result.contentSha256)
-        assertNull(result.declaredPackage)
-        assertTrue(result.imports.isEmpty())
-        assertTrue(result.topLevelSymbols.isEmpty())
-        assertTrue(result.parsingErrors.isNotEmpty())
+        assertEquals(
+            "app/src/main/java/com/auditflow/RemoteOnly.kt",
+            result.relativePath
+        )
+
+        assertEquals(
+            ContentAvailabilityState.UNAVAILABLE_NOT_FETCHED,
+            result.contentAvailability
+        )
+
+        assertEquals(
+            ParsingStatus.UNAVAILABLE_CONTENT,
+            result.parsingStatus
+        )
+
+        assertNull(
+            result.contentSha256
+        )
+
+        assertNull(
+            result.declaredPackage
+        )
+
+        assertTrue(
+            result.imports.isEmpty()
+        )
+
+        assertTrue(
+            result.topLevelSymbols.isEmpty()
+        )
+
+        assertTrue(
+            result.parsingErrors.isNotEmpty()
+        )
     }
 
     @Test
@@ -158,21 +267,61 @@ class GitHubFileInspectionBridgeTest {
             "src/Main.kt" to "package com.example\nfun main() {}"
         )
 
-        val results = files.map { fileNode ->
-            val content = contentStore[fileNode.relativePath]
-            FileInspectionStation.inspectFile(fileNode, content)
-        }
+        val results =
+            files.map { fileNode ->
+                val content =
+                    contentStore[fileNode.relativePath]
 
-        assertEquals(2, results.size)
-        val mdResult = results[0]
-        assertEquals(SemanticFileType.MARKDOWN, mdResult.semanticFileType)
-        assertEquals(ParsingStatus.SKIPPED_NON_SOURCE, mdResult.parsingStatus)
+                FileInspectionStation.inspectFile(
+                    fileNode,
+                    content
+                )
+            }
 
-        val ktResult = results[1]
-        assertEquals(SemanticFileType.KOTLIN_SOURCE, ktResult.semanticFileType)
-        assertEquals(ParsingStatus.SUCCESS, ktResult.parsingStatus)
-        assertEquals("com.example", ktResult.declaredPackage)
-        assertEquals(1, ktResult.topLevelSymbols.size)
-        assertEquals("main", ktResult.topLevelSymbols[0].name)
+        assertEquals(
+            2,
+            results.size
+        )
+
+        val mdResult =
+            results[0]
+
+        assertEquals(
+            SemanticFileType.MARKDOWN,
+            mdResult.semanticFileType
+        )
+
+        assertEquals(
+            ParsingStatus.SKIPPED_NON_SOURCE,
+            mdResult.parsingStatus
+        )
+
+        val ktResult =
+            results[1]
+
+        assertEquals(
+            SemanticFileType.KOTLIN_SOURCE,
+            ktResult.semanticFileType
+        )
+
+        assertEquals(
+            ParsingStatus.PARSED_SUCCESS,
+            ktResult.parsingStatus
+        )
+
+        assertEquals(
+            "com.example",
+            ktResult.declaredPackage
+        )
+
+        assertEquals(
+            1,
+            ktResult.topLevelSymbols.size
+        )
+
+        assertEquals(
+            "main",
+            ktResult.topLevelSymbols[0].name
+        )
     }
 }
