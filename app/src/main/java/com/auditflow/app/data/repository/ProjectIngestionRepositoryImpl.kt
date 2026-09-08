@@ -962,7 +962,7 @@ class ProjectIngestionRepositoryImpl(
             }
         }
 
-    private fun resolveTargetCommitSha(
+    private suspend fun resolveTargetCommitSha(
         owner: String,
         repo: String,
         targetBranch: String
@@ -1025,7 +1025,7 @@ class ProjectIngestionRepositoryImpl(
      * It falls back to a non-recursive directory walk and recursively enumerates
      * every subtree.
      */
-    private fun acquireCompleteGitTree(
+    private suspend fun acquireCompleteGitTree(
         owner: String,
         repo: String,
         rootTreeSha: String,
@@ -1117,7 +1117,7 @@ class ProjectIngestionRepositoryImpl(
         }
     }
 
-    private fun enumerateGitTreeRecursively(
+    private suspend fun enumerateGitTreeRecursively(
         owner: String,
         repo: String,
         treeSha: String,
@@ -1231,7 +1231,7 @@ class ProjectIngestionRepositoryImpl(
         return true
     }
 
-    private fun acquireAndVerifyFileBytes(
+    private suspend fun acquireAndVerifyFileBytes(
         rawUrl: String,
         expectedBlobSha: String?,
         expectedSizeBytes: Long
@@ -1298,7 +1298,7 @@ class ProjectIngestionRepositoryImpl(
         }
     }
 
-    private fun downloadBytesWithRetry(
+    private suspend fun downloadBytesWithRetry(
         urlString: String
     ): ByteArray {
         val maxAttempts = 4
@@ -1443,7 +1443,7 @@ class ProjectIngestionRepositoryImpl(
             )
     }
 
-    private fun fetchJsonFromUrlWithRetry(
+    private suspend fun fetchJsonFromUrlWithRetry(
         urlString: String
     ): JSONObject {
         val maxAttempts = 4
