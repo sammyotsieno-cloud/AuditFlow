@@ -175,6 +175,8 @@ class GitHubFileInspectionBridgeTest {
          *
          * Therefore verify both the complete path and canonical symbol name.
          */
+        println("DEBUG LINES: ${retrievedGitHubContent.lines()}")
+        println("DEBUG IMPORTS: ${result.imports}")
         assertEquals(
             "java.security.MessageDigest",
             result.imports[0].importPath
