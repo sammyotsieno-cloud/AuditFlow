@@ -431,8 +431,17 @@ class ProjectIngestionRepositoryImpl(
                     "Resolving immutable commit SHA for branch '$targetBranch'..."
                 )
 
-                val targetCommitSha =
-                    resolveTargetCommitSha(
+                /*
+                 * The acquisition layer needs both identities:
+                 *
+                 * - commitSha is the immutable repository snapshot identity.
+                 * - treeSha is the root Git tree referenced by that commit.
+                 *
+                 * Keeping these separate prevents a Git commit object from
+                 * being incorrectly used as a Git tree object.
+                 */
+                val resolvedCommit =
+                    resolveTargetCommit(
                         repoRef.owner,
                         repoRef.repo,
                         targetBranch
@@ -442,6 +451,9 @@ class ProjectIngestionRepositoryImpl(
                                 "Failed to resolve immutable commit SHA for repository '${repoRef.slug}' on branch '$targetBranch'."
                             )
                         )
+
+                val targetCommitSha =
+                    resolvedCommit.commitSha
 
                 onProgress(
                     20,
@@ -463,7 +475,7 @@ class ProjectIngestionRepositoryImpl(
                     acquireCompleteGitTree(
                         owner = repoRef.owner,
                         repo = repoRef.repo,
-                        rootTreeSha = targetCommitSha,
+                        rootTreeSha = resolvedCommit.treeSha,
                         onProgress = { progress, message ->
                             onProgress(progress, message)
                         }
@@ -962,11 +974,16 @@ class ProjectIngestionRepositoryImpl(
             }
         }
 
-    private suspend fun resolveTargetCommitSha(
+    private data class ResolvedCommit(
+        val commitSha: String,
+        val treeSha: String
+    )
+
+    private suspend fun resolveTargetCommit(
         owner: String,
         repo: String,
         targetBranch: String
-    ): String? {
+    ): ResolvedCommit? {
         val encodedBranch =
             URLEncoder.encode(
                 targetBranch,
@@ -980,13 +997,32 @@ class ProjectIngestionRepositoryImpl(
             val commitJson =
                 fetchJsonFromUrlWithRetry(commitUrl)
 
-            commitJson
-                .optString("sha", "")
-                .takeIf {
-                    it.matches(
-                        Regex("^[0-9a-fA-F]{40}$")
-                    )
-                }
+            val commitSha =
+                commitJson
+                    .optString("sha", "")
+                    .takeIf {
+                        it.matches(
+                            Regex("^[0-9a-fA-F]{40}$")
+                        )
+                    }
+                    ?: return@try null
+
+            val treeSha =
+                commitJson
+                    .optJSONObject("commit")
+                    ?.optJSONObject("tree")
+                    ?.optString("sha", "")
+                    ?.takeIf {
+                        it.matches(
+                            Regex("^[0-9a-fA-F]{40}$")
+                        )
+                    }
+                    ?: return@try null
+
+            ResolvedCommit(
+                commitSha = commitSha,
+                treeSha = treeSha
+            )
         } catch (firstFailure: Exception) {
             val branchUrl =
                 "https://api.github.com/repos/$owner/$repo/branches/$encodedBranch"
@@ -995,16 +1031,45 @@ class ProjectIngestionRepositoryImpl(
                 val branchJson =
                     fetchJsonFromUrlWithRetry(branchUrl)
 
-                val sha =
+                val commitSha =
                     branchJson
                         .optJSONObject("commit")
                         ?.optString("sha", "")
+                        ?.takeIf {
+                            it.matches(
+                                Regex("^[0-9a-fA-F]{40}$")
+                            )
+                        }
+                        ?: return@try null
 
-                sha?.takeIf {
-                    it.matches(
-                        Regex("^[0-9a-fA-F]{40}$")
-                    )
-                }
+                /*
+                 * The branch endpoint provides the commit SHA but does not
+                 * provide the commit's root tree SHA. Resolve the immutable
+                 * commit object once more so tree enumeration still starts
+                 * from the actual tree referenced by that commit.
+                 */
+                val commitByShaUrl =
+                    "https://api.github.com/repos/$owner/$repo/commits/$commitSha"
+
+                val commitJson =
+                    fetchJsonFromUrlWithRetry(commitByShaUrl)
+
+                val resolvedTreeSha =
+                    commitJson
+                        .optJSONObject("commit")
+                        ?.optJSONObject("tree")
+                        ?.optString("sha", "")
+                        ?.takeIf {
+                            it.matches(
+                                Regex("^[0-9a-fA-F]{40}$")
+                            )
+                        }
+                        ?: return@try null
+
+                ResolvedCommit(
+                    commitSha = commitSha,
+                    treeSha = resolvedTreeSha
+                )
             } catch (secondFailure: Exception) {
                 null
             }
@@ -1019,7 +1084,8 @@ class ProjectIngestionRepositoryImpl(
     /**
      * Correctness-first Git tree acquisition.
      *
-     * The root commit SHA identifies the repository tree.
+     * The supplied rootTreeSha is the root tree SHA referenced by the
+     * immutable target commit.
      *
      * If a recursive response is truncated, the implementation does not guess.
      * It falls back to a non-recursive directory walk and recursively enumerates
@@ -2088,8 +2154,7 @@ class ProjectIngestionRepositoryImpl(
                 }
 
                 zipIn.closeEntry()
-                entry =
-                    zipIn.nextEntry
+                entry = zipIn.nextEntry
             }
 
             null
