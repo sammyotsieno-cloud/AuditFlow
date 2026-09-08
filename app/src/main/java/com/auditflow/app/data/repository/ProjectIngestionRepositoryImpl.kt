@@ -941,39 +941,6 @@ class ProjectIngestionRepositoryImpl(
             }
         }
 
-    override suspend fun ingestGitHubRepository(
-        repoUrlOrSlug: String,
-        branch: String?,
-        onProgress: (Int, String) -> Unit
-    ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> =
-        withContext(Dispatchers.IO) {
-            val snapshotResult =
-                acquireRepositorySnapshot(
-                    repoUrlOrSlug = repoUrlOrSlug,
-                    branch = branch,
-                    onProgress = onProgress
-                )
-
-            if (snapshotResult.isSuccess) {
-                val snapshot =
-                    snapshotResult.getOrThrow()
-
-                Result.success(
-                    Pair(
-                        snapshot.metadata,
-                        snapshot.files
-                    )
-                )
-            } else {
-                Result.failure(
-                    snapshotResult.exceptionOrNull()
-                        ?: IllegalStateException(
-                            "Snapshot acquisition failed"
-                        )
-                )
-            }
-        }
-
     private data class ResolvedCommit(
         val commitSha: String,
         val treeSha: String
