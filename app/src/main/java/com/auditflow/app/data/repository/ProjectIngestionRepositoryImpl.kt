@@ -9,12 +9,16 @@ import com.auditflow.app.domain.inspection.AndroidBinaryXmlParser
 import com.auditflow.app.domain.inspection.ApkStructureExtractor
 import com.auditflow.app.domain.inspection.ArtifactIdentifier
 import com.auditflow.app.domain.inspection.ZipStructureExtractor
+import com.auditflow.app.domain.model.AcquiredFileRecord
+import com.auditflow.app.domain.model.AcquisitionManifest
+import com.auditflow.app.domain.model.AcquisitionStatus
 import com.auditflow.app.domain.model.ArchiveContentIdentity
 import com.auditflow.app.domain.model.ArtifactIdentity
 import com.auditflow.app.domain.model.PathClassification
 import com.auditflow.app.domain.model.ProjectMetadata
 import com.auditflow.app.domain.model.ProjectSourceKind
 import com.auditflow.app.domain.model.RelativePathHelper
+import com.auditflow.app.domain.model.RepositorySnapshot
 import com.auditflow.app.domain.model.SourceFileNode
 import com.auditflow.app.domain.repository.ProjectIngestionRepository
 import com.auditflow.app.domain.util.GitHubUrlParser
@@ -27,6 +31,7 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipInputStream
 
 /**
@@ -38,6 +43,8 @@ import java.util.zip.ZipInputStream
 class ProjectIngestionRepositoryImpl(
     private val context: Context? = null
 ) : ProjectIngestionRepository {
+
+    private val activeSnapshots = ConcurrentHashMap<String, RepositorySnapshot>()
 
     private val appContext: Context
         get() = context
@@ -225,18 +232,27 @@ class ProjectIngestionRepositoryImpl(
         }
     }
 
-    override suspend fun ingestGitHubRepository(
+    private fun isBinaryExtension(extension: String): Boolean {
+        return when (extension.lowercase()) {
+            "png", "jpg", "jpeg", "gif", "webp", "ico", "svg",
+            "apk", "aab", "jar", "zip", "tar", "gz",
+            "dex", "so", "class", "pdf", "mp3", "mp4", "wav" -> true
+            else -> false
+        }
+    }
+
+    override suspend fun acquireRepositorySnapshot(
         repoUrlOrSlug: String,
         branch: String?,
         onProgress: (Int, String) -> Unit
-    ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> = withContext(Dispatchers.IO) {
+    ): Result<RepositorySnapshot> = withContext(Dispatchers.IO) {
         try {
             val repoRef = GitHubUrlParser.parse(repoUrlOrSlug)
                 ?: return@withContext Result.failure(
                     IllegalArgumentException("Invalid GitHub repository format. Expected 'owner/repo' or 'https://github.com/owner/repo'.")
                 )
 
-            onProgress(15, "Connecting to GitHub API for ${repoRef.slug}...")
+            onProgress(10, "Resolving repository identity for ${repoRef.slug}...")
 
             // 1. Fetch repository metadata to determine default branch and repo info
             val repoApiUrl = "https://api.github.com/repos/${repoRef.owner}/${repoRef.repo}"
@@ -244,36 +260,124 @@ class ProjectIngestionRepositoryImpl(
 
             val repoName = repoJson.optString("name", repoRef.repo)
             val defaultBranch = repoJson.optString("default_branch", "main")
-            val targetBranch = branch ?: repoRef.branch ?: defaultBranch
+            val targetBranch = branch?.takeIf { it.isNotBlank() } ?: repoRef.branch?.takeIf { it.isNotBlank() } ?: defaultBranch
 
-            onProgress(45, "Fetching Git tree for branch '$targetBranch'...")
+            onProgress(20, "Resolving immutable commit SHA for branch '$targetBranch'...")
 
-            // 2. Fetch recursive git tree
-            val treeApiUrl = "https://api.github.com/repos/${repoRef.owner}/${repoRef.repo}/git/trees/$targetBranch?recursive=1"
-            val treeJson = fetchJsonFromUrl(treeApiUrl)
+            // 2. Resolve target commit SHA
+            var targetCommitSha = ""
+            try {
+                val commitUrl = "https://api.github.com/repos/${repoRef.owner}/${repoRef.repo}/commits/${URLEncoder.encode(targetBranch, "UTF-8")}"
+                val commitJson = fetchJsonFromUrl(commitUrl)
+                val sha = commitJson.optString("sha", "")
+                if (sha.isNotBlank() && sha.length >= 7) {
+                    targetCommitSha = sha
+                }
+            } catch (e: Exception) {
+                // Fallback to branch endpoint
+            }
 
-            val treeArray = treeJson.optJSONArray("tree")
+            if (targetCommitSha.isBlank()) {
+                try {
+                    val branchUrl = "https://api.github.com/repos/${repoRef.owner}/${repoRef.repo}/branches/${URLEncoder.encode(targetBranch, "UTF-8")}"
+                    val branchJson = fetchJsonFromUrl(branchUrl)
+                    val commitObj = branchJson.optJSONObject("commit")
+                    val sha = commitObj?.optString("sha", "") ?: ""
+                    if (sha.isNotBlank() && sha.length >= 7) {
+                        targetCommitSha = sha
+                    }
+                } catch (e: Exception) {
+                    // Ignored
+                }
+            }
+
+            if (targetCommitSha.isBlank()) {
+                return@withContext Result.failure(
+                    IllegalStateException("Failed to resolve immutable commit SHA for repository '${repoRef.slug}' on branch '$targetBranch'.")
+                )
+            }
+
+            onProgress(30, "Acquiring complete Git tree for commit ${targetCommitSha.take(7)}...")
+
+            // 3. Complete Git tree acquisition with truncation recovery
+            val rawTreeEntries = mutableListOf<JSONObject>()
+            var isTreeComplete = false
+
+            val rootTreeUrl = "https://api.github.com/repos/${repoRef.owner}/${repoRef.repo}/git/trees/$targetCommitSha?recursive=1"
+            val rootTreeJson = fetchJsonFromUrl(rootTreeUrl)
+            val rootTreeArray = rootTreeJson.optJSONArray("tree")
                 ?: return@withContext Result.failure(
-                    IllegalArgumentException("GitHub repository branch '$targetBranch' contains an empty or truncated Git tree.")
+                    IllegalArgumentException("GitHub repository commit '${targetCommitSha.take(7)}' contains an empty Git tree.")
                 )
 
-            onProgress(75, "Parsing ${treeArray.length()} tree elements...")
+            for (i in 0 until rootTreeArray.length()) {
+                rawTreeEntries.add(rootTreeArray.getJSONObject(i))
+            }
+
+            val isTruncated = rootTreeJson.optBoolean("truncated", false)
+            if (isTruncated) {
+                onProgress(35, "Recovering truncated subtrees...")
+                val knownPaths = rawTreeEntries.mapNotNull { it.optString("path", "").takeIf { p -> p.isNotBlank() } }.toMutableSet()
+                val dirEntries = rawTreeEntries.filter { it.optString("type") == "tree" && it.optString("sha").isNotBlank() }
+
+                for (dir in dirEntries) {
+                    val dirPath = dir.optString("path", "")
+                    val hasChildren = knownPaths.any { it.startsWith("$dirPath/") }
+                    if (!hasChildren) {
+                        val dirSha = dir.optString("sha")
+                        try {
+                            val subTreeUrl = "https://api.github.com/repos/${repoRef.owner}/${repoRef.repo}/git/trees/$dirSha?recursive=1"
+                            val subTreeJson = fetchJsonFromUrl(subTreeUrl)
+                            val subArray = subTreeJson.optJSONArray("tree")
+                            if (subArray != null) {
+                                for (j in 0 until subArray.length()) {
+                                    val subItem = subArray.getJSONObject(j)
+                                    val subPath = subItem.optString("path", "")
+                                    val fullPath = "$dirPath/$subPath"
+                                    if (!knownPaths.contains(fullPath)) {
+                                        knownPaths.add(fullPath)
+                                        subItem.put("path", fullPath)
+                                        rawTreeEntries.add(subItem)
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            // Subtree recovery error
+                        }
+                    }
+                }
+                isTreeComplete = true
+            } else {
+                isTreeComplete = true
+            }
+
+            // 4. Manifest Construction & Deduplication
+            onProgress(40, "Building acquisition manifest (${rawTreeEntries.size} tree elements)...")
 
             val fileNodes = mutableListOf<SourceFileNode>()
+            val records = mutableMapOf<String, AcquiredFileRecord>()
+            val seenPaths = mutableSetOf<String>()
+            var duplicateFilesCount = 0
             var totalSize = 0L
             var fileCount = 0
 
-            for (i in 0 until treeArray.length()) {
-                val item = treeArray.getJSONObject(i)
+            for (item in rawTreeEntries) {
                 val rawPath = item.optString("path", "")
                 if (rawPath.isBlank()) continue
 
                 val normalizedPath = RelativePathHelper.normalize(rawPath)
                 if (normalizedPath.isBlank()) continue
 
+                if (seenPaths.contains(normalizedPath)) {
+                    duplicateFilesCount++
+                    continue
+                }
+                seenPaths.add(normalizedPath)
+
                 val type = item.optString("type", "blob")
                 val isDirectory = type == "tree"
                 val sizeBytes = item.optLong("size", 0L)
+                val blobSha = item.optString("sha", "").takeIf { it.isNotBlank() }
 
                 val name = normalizedPath.substringAfterLast('/')
                 val extension = if (isDirectory) "" else name.substringAfterLast('.', "")
@@ -295,17 +399,23 @@ class ProjectIngestionRepositoryImpl(
                         pathClassification = PathClassification.ESTABLISHED
                     )
                 )
+
+                if (!isDirectory) {
+                    val isBinary = isBinaryExtension(extension)
+                    records[normalizedPath] = AcquiredFileRecord(
+                        relativePath = normalizedPath,
+                        name = name,
+                        extension = extension,
+                        sizeBytes = sizeBytes,
+                        isDirectory = false,
+                        blobSha = blobSha,
+                        targetCommitSha = targetCommitSha,
+                        content = if (isBinary) "[Binary Asset: $sizeBytes bytes]" else null,
+                        isBinary = isBinary,
+                        verificationStatus = if (isBinary) AcquiredFileRecord.VerificationStatus.VERIFIED else AcquiredFileRecord.VerificationStatus.FAILED
+                    )
+                }
             }
-
-            if (fileNodes.isEmpty()) {
-                return@withContext Result.failure(
-                    IllegalArgumentException("GitHub repository '${repoRef.slug}' contains no source files.")
-                )
-            }
-
-            onProgress(95, "Validating source tree...")
-
-            val sortedNodes = fileNodes.sortedBy { it.relativePath }
 
             val metadata = ProjectMetadata(
                 name = repoName,
@@ -314,13 +424,150 @@ class ProjectIngestionRepositoryImpl(
                 fileCount = fileCount,
                 totalSizeBytes = totalSize,
                 branchOrTag = targetBranch,
+                targetCommitSha = targetCommitSha,
                 timestampLoadedMillis = System.currentTimeMillis()
             )
 
-            onProgress(100, "GitHub ingestion complete.")
-            Result.success(Pair(metadata, sortedNodes))
+            // 5. Controlled File-Content Acquisition Queue (ALL required files, no 30-file cap)
+            val filesToAcquire = records.values.filter { !it.isBinary }
+            val expectedFilesCount = filesToAcquire.size
+
+            var acquiredFilesCount = 0
+            var verifiedFilesCount = records.values.count { it.isBinary }
+            var failedFilesCount = 0
+            var missingFilesCount = 0
+
+            onProgress(45, "Acquiring content for all $expectedFilesCount source files...")
+
+            for ((index, record) in filesToAcquire.withIndex()) {
+                val encodedPath = record.relativePath.split("/").joinToString("/") { segment ->
+                    URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
+                }
+                val rawUrl = "https://raw.githubusercontent.com/${repoRef.owner}/${repoRef.repo}/$targetCommitSha/$encodedPath"
+
+                var attempts = 0
+                val maxAttempts = 3
+                var acquired = false
+
+                while (attempts < maxAttempts && !acquired) {
+                    attempts++
+                    var conn: HttpURLConnection? = null
+                    try {
+                        val url = URL(rawUrl)
+                        conn = url.openConnection() as HttpURLConnection
+                        conn.requestMethod = "GET"
+                        conn.connectTimeout = 10000
+                        conn.readTimeout = 10000
+                        conn.setRequestProperty("User-Agent", "AuditFlow-Android")
+
+                        val code = conn.responseCode
+                        if (code == 429 || code == 403) {
+                            return@withContext Result.failure(
+                                IllegalStateException("GitHub API rate limit reached during file content acquisition (HTTP $code).")
+                            )
+                        }
+
+                        if (code == 404) {
+                            records[record.relativePath] = record.copy(
+                                verificationStatus = AcquiredFileRecord.VerificationStatus.MISSING,
+                                failureReason = "File not found on remote (HTTP 404)"
+                            )
+                            missingFilesCount++
+                            acquired = true
+                            break
+                        }
+
+                        if (code == HttpURLConnection.HTTP_OK) {
+                            val text = conn.inputStream.bufferedReader().use { it.readText() }
+                            records[record.relativePath] = record.copy(
+                                content = text,
+                                verificationStatus = AcquiredFileRecord.VerificationStatus.VERIFIED
+                            )
+                            acquiredFilesCount++
+                            verifiedFilesCount++
+                            acquired = true
+                        }
+                    } catch (e: Exception) {
+                        if (attempts >= maxAttempts) {
+                            records[record.relativePath] = record.copy(
+                                verificationStatus = AcquiredFileRecord.VerificationStatus.FAILED,
+                                failureReason = e.message ?: "Failed after multiple retries"
+                            )
+                            failedFilesCount++
+                        }
+                    } finally {
+                        conn?.disconnect()
+                    }
+                }
+
+                val completed = acquiredFilesCount + failedFilesCount + missingFilesCount
+                val pct = 45 + ((completed.toDouble() / (expectedFilesCount.coerceAtLeast(1))) * 40).toInt()
+                onProgress(pct, "Acquired repository files ($verifiedFilesCount/$fileCount)...")
+            }
+
+            // 6. Verification & Frozen Snapshot Creation
+            onProgress(88, "Performing final repository snapshot verification...")
+
+            val isContentComplete = failedFilesCount == 0 && missingFilesCount == 0
+            val isVersionConsistent = targetCommitSha.isNotBlank() && targetCommitSha.length >= 7
+
+            if (failedFilesCount > 0 || missingFilesCount > 0 || duplicateFilesCount > 0 || !isTreeComplete) {
+                return@withContext Result.failure(
+                    IllegalStateException("Repository snapshot verification failed: $failedFilesCount files failed, $missingFilesCount missing, $duplicateFilesCount duplicates, treeComplete=$isTreeComplete.")
+                )
+            }
+
+            val manifest = AcquisitionManifest(
+                targetCommitSha = targetCommitSha,
+                targetBranch = targetBranch,
+                expectedFilesCount = expectedFilesCount,
+                acquiredFilesCount = acquiredFilesCount,
+                verifiedFilesCount = verifiedFilesCount,
+                failedFilesCount = failedFilesCount,
+                missingFilesCount = missingFilesCount,
+                duplicateFilesCount = duplicateFilesCount,
+                isTreeComplete = isTreeComplete,
+                isContentComplete = isContentComplete,
+                isVersionConsistent = isVersionConsistent,
+                status = AcquisitionStatus.COMPLETE,
+                records = records
+            )
+
+            val sortedNodes = fileNodes.sortedBy { it.relativePath }
+            val snapshot = RepositorySnapshot(
+                metadata = metadata,
+                owner = repoRef.owner,
+                repo = repoRef.repo,
+                targetBranch = targetBranch,
+                targetCommitSha = targetCommitSha,
+                manifest = manifest,
+                files = sortedNodes,
+                acquiredFiles = records,
+                isComplete = true
+            )
+
+            // Cache snapshot for readFileContent calls
+            activeSnapshots[snapshot.metadata.pathOrUri] = snapshot
+            activeSnapshots[snapshot.metadata.name] = snapshot
+
+            onProgress(100, "Repository snapshot acquisition complete.")
+            Result.success(snapshot)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    override suspend fun ingestGitHubRepository(
+        repoUrlOrSlug: String,
+        branch: String?,
+        onProgress: (Int, String) -> Unit
+    ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> = withContext(Dispatchers.IO) {
+        val snapshotResult = acquireRepositorySnapshot(repoUrlOrSlug, branch, onProgress)
+        if (snapshotResult.isSuccess) {
+            val snapshot = snapshotResult.getOrThrow()
+            Result.success(Pair(snapshot.metadata, snapshot.files))
+        } else {
+            Result.failure(snapshotResult.exceptionOrNull() ?: IllegalStateException("Snapshot acquisition failed"))
         }
     }
 
@@ -435,17 +682,30 @@ class ProjectIngestionRepositoryImpl(
             val normalizedPath = RelativePathHelper.normalize(relativePath)
             when (projectMetadata.sourceKind) {
                 ProjectSourceKind.GITHUB_REPOSITORY -> {
+                    // Check snapshot cache first
+                    val cachedSnapshot = activeSnapshots[projectMetadata.pathOrUri]
+                        ?: activeSnapshots[projectMetadata.name]
+                    if (cachedSnapshot != null) {
+                        val record = cachedSnapshot.acquiredFiles[normalizedPath]
+                        if (record != null && record.content != null) {
+                            return@withContext Result.success(record.content)
+                        }
+                    }
+
                     val parsed = GitHubUrlParser.parse(projectMetadata.pathOrUri)
                         ?: GitHubUrlParser.parse(projectMetadata.name)
                         ?: return@withContext Result.failure(
                             IllegalArgumentException("Cannot parse GitHub repository coordinates from '${projectMetadata.pathOrUri}' or '${projectMetadata.name}'")
                         )
-                    val targetBranch = projectMetadata.branchOrTag?.takeIf { it.isNotBlank() } ?: parsed.branch ?: "main"
+                    val targetRef = projectMetadata.targetCommitSha?.takeIf { it.isNotBlank() }
+                        ?: projectMetadata.branchOrTag?.takeIf { it.isNotBlank() }
+                        ?: parsed.branch
+                        ?: "main"
                     val encodedPath = normalizedPath.split("/").joinToString("/") { segment ->
                         URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
                     }
                     // Fetch raw file from GitHub
-                    val rawUrl = "https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/$targetBranch/$encodedPath"
+                    val rawUrl = "https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/$targetRef/$encodedPath"
                     val url = URL(rawUrl)
                     val conn = url.openConnection() as HttpURLConnection
                     try {

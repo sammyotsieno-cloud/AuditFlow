@@ -126,7 +126,9 @@ class HomeViewModel(
                 progress = 5,
                 statusMessage = "Initializing GitHub repository ingestion..."
             )
-            val result = projectIngestionRepository.ingestGitHubRepository(
+
+            // Attempt complete snapshot acquisition pipeline
+            val snapshotResult = projectIngestionRepository.acquireRepositorySnapshot(
                 repoUrlOrSlug = repoUrlOrSlug,
                 branch = branch,
                 onProgress = { progress, msg ->
@@ -140,17 +142,45 @@ class HomeViewModel(
                 }
             )
 
-            result.fold(
-                onSuccess = { (metadata, files) ->
-                    projectStateRepository.setProjectLoaded(metadata, files)
-                },
-                onFailure = { error ->
-                    projectStateRepository.setError(
-                        message = error.message ?: "Failed to ingest GitHub repository",
-                        cause = error
-                    )
+            if (snapshotResult.isSuccess) {
+                val snapshot = snapshotResult.getOrThrow()
+                projectStateRepository.setProjectLoaded(snapshot.metadata, snapshot.files, snapshot)
+
+                // Populate file inspections directly from acquired snapshot content without re-fetching
+                snapshot.files.filter { !it.isDirectory }.forEach { node ->
+                    val record = snapshot.acquiredFiles[node.relativePath]
+                    val content = record?.content
+                    val inspection = FileInspectionStation.inspectFile(node, content)
+                    _fileInspections.update { it + (node.relativePath to inspection) }
                 }
-            )
+            } else {
+                // Fallback to legacy ingestion if snapshot acquisition fails or is mocked in older tests
+                val result = projectIngestionRepository.ingestGitHubRepository(
+                    repoUrlOrSlug = repoUrlOrSlug,
+                    branch = branch,
+                    onProgress = { progress, msg ->
+                        viewModelScope.launch {
+                            projectStateRepository.setProjectLoading(
+                                source = repoUrlOrSlug,
+                                progress = progress,
+                                statusMessage = msg
+                            )
+                        }
+                    }
+                )
+
+                result.fold(
+                    onSuccess = { (metadata, files) ->
+                        projectStateRepository.setProjectLoaded(metadata, files)
+                    },
+                    onFailure = { error ->
+                        projectStateRepository.setError(
+                            message = error.message ?: "Failed to ingest GitHub repository",
+                            cause = error
+                        )
+                    }
+                )
+            }
         }
     }
 
@@ -165,7 +195,7 @@ class HomeViewModel(
     /**
      * Bridges live ingested project files to the source inspection machinery.
      * Retrieves actual content using [ProjectIngestionRepository.readFileContent]
-     * and inspects code structure via [FileInspectionStation.inspectFile].
+     * or cached snapshot and inspects code structure via [FileInspectionStation.inspectFile].
      */
     suspend fun inspectFile(sourceNode: SourceFileNode): Result<FileInspectionResult> {
         if (sourceNode.isDirectory) {
@@ -174,6 +204,22 @@ class HomeViewModel(
 
         val loadedState = (uiState.value.projectState as? ProjectState.ProjectLoaded)
             ?: return Result.failure(IllegalStateException("No project currently loaded"))
+
+        val existing = _fileInspections.value[sourceNode.relativePath]
+        if (existing != null && existing.contentAvailability.isAvailable) {
+            return Result.success(existing)
+        }
+
+        // Check if content exists in the frozen snapshot
+        val snapshot = loadedState.snapshot
+        if (snapshot != null) {
+            val record = snapshot.acquiredFiles[sourceNode.relativePath]
+            if (record != null && record.content != null) {
+                val inspection = FileInspectionStation.inspectFile(sourceNode, record.content)
+                _fileInspections.update { it + (sourceNode.relativePath to inspection) }
+                return Result.success(inspection)
+            }
+        }
 
         val contentResult = projectIngestionRepository.readFileContent(
             loadedState.metadata,

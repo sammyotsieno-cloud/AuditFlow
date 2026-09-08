@@ -429,7 +429,7 @@ export class SourceCodeStructureExtractor {
       contentAvailability: 'AVAILABLE',
       contentSha256: sha256,
       parsingStatus: parsingErrors.length > 0 ? 'PARSED_PARTIAL' : 'PARSED_SUCCESS',
-      linesOfCode: loc,
+      linesOfCode: lines.length,
       packageDeclaration,
       hasPackageDiscrepancy,
       expectedPackageFromPath: expectedPackage,

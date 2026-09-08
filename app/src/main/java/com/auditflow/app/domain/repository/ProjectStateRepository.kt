@@ -2,6 +2,7 @@ package com.auditflow.app.domain.repository
 
 import com.auditflow.app.domain.model.ProjectMetadata
 import com.auditflow.app.domain.model.ProjectState
+import com.auditflow.app.domain.model.RepositorySnapshot
 import com.auditflow.app.domain.model.SourceFileNode
 import kotlinx.coroutines.flow.StateFlow
 
@@ -14,5 +15,12 @@ interface ProjectStateRepository {
     suspend fun setNoProject()
     suspend fun setProjectLoading(source: String, progress: Int = 0, statusMessage: String = "")
     suspend fun setProjectLoaded(metadata: ProjectMetadata, files: List<SourceFileNode> = emptyList())
+    suspend fun setProjectLoaded(
+        metadata: ProjectMetadata,
+        files: List<SourceFileNode>,
+        snapshot: RepositorySnapshot?
+    ) {
+        setProjectLoaded(metadata, files)
+    }
     suspend fun setError(message: String, cause: Throwable? = null)
 }

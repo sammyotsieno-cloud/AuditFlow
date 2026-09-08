@@ -32,7 +32,8 @@ sealed interface ProjectState {
      */
     data class ProjectLoaded(
         val metadata: ProjectMetadata,
-        val files: List<SourceFileNode> = emptyList()
+        val files: List<SourceFileNode> = emptyList(),
+        val snapshot: RepositorySnapshot? = null
     ) : ProjectState
 
     /**

@@ -244,13 +244,22 @@ export const SourceTreeScreen: React.FC<SourceTreeScreenProps> = ({
           {/* Project Summary Header Bar */}
           <div className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs flex items-center justify-between">
             <div className="truncate mr-2">
-              <span className="text-xs font-bold text-slate-900 block truncate">
-                {projectState.metadata.name}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-900 block truncate">
+                  {projectState.metadata.name}
+                </span>
+                {projectState.snapshot?.targetCommitSha && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded border border-emerald-300 shrink-0">
+                    SHA: {projectState.snapshot.targetCommitSha.slice(0, 7)}
+                  </span>
+                )}
+              </div>
               <span className="text-[10px] font-mono text-slate-500 truncate block">
                 {projectState.metadata.branchOrTag
                   ? `branch: ${projectState.metadata.branchOrTag}`
                   : 'deterministic source tree'}
+                {projectState.snapshot?.manifest.isTreeComplete && ' • tree complete'}
+                {projectState.snapshot?.isComplete && ' • snapshot verified & frozen'}
               </span>
             </div>
             <div className="text-right shrink-0">

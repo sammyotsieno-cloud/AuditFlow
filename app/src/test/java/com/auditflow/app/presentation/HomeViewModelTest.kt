@@ -627,6 +627,12 @@ class HomeViewModelTest {
                 NotImplementedError()
             )
 
+        var snapshotResult:
+            Result<RepositorySnapshot> =
+            Result.failure(
+                NotImplementedError()
+            )
+
         var fileContentResult:
             Result<String> =
             Result.failure(
@@ -651,6 +657,13 @@ class HomeViewModelTest {
             onProgress: (Int, String) -> Unit
         ): Result<Pair<ProjectMetadata, List<SourceFileNode>>> =
             githubResult
+
+        override suspend fun acquireRepositorySnapshot(
+            repoUrlOrSlug: String,
+            branch: String?,
+            onProgress: (Int, String) -> Unit
+        ): Result<RepositorySnapshot> =
+            snapshotResult
 
         override suspend fun readFileContent(
             projectMetadata: ProjectMetadata,

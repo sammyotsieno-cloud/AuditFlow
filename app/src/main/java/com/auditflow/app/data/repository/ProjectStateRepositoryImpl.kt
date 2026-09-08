@@ -3,6 +3,7 @@ package com.auditflow.app.data.repository
 import com.auditflow.app.data.local.AuditFlowPreferences
 import com.auditflow.app.domain.model.ProjectMetadata
 import com.auditflow.app.domain.model.ProjectState
+import com.auditflow.app.domain.model.RepositorySnapshot
 import com.auditflow.app.domain.model.SourceFileNode
 import com.auditflow.app.domain.repository.ProjectStateRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +41,15 @@ class ProjectStateRepositoryImpl(
     override suspend fun setProjectLoaded(metadata: ProjectMetadata, files: List<SourceFileNode>) {
         preferences.setPersistedStateKind(AuditFlowPreferences.STATE_KIND_LOADED)
         _projectState.value = ProjectState.ProjectLoaded(metadata, files)
+    }
+
+    override suspend fun setProjectLoaded(
+        metadata: ProjectMetadata,
+        files: List<SourceFileNode>,
+        snapshot: RepositorySnapshot?
+    ) {
+        preferences.setPersistedStateKind(AuditFlowPreferences.STATE_KIND_LOADED)
+        _projectState.value = ProjectState.ProjectLoaded(metadata, files, snapshot)
     }
 
     override suspend fun setError(message: String, cause: Throwable?) {

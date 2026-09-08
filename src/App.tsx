@@ -264,11 +264,12 @@ export default function App() {
                           : prev
                       );
                     }}
-                    onProjectLoaded={(metadata, files, inspections, resolutionResult, decomposedTreeRoot) => {
+                    onProjectLoaded={(metadata, files, inspections, resolutionResult, decomposedTreeRoot, snapshot) => {
                       setProjectState({
                         kind: 'ProjectLoaded',
                         metadata,
                         files,
+                        snapshot,
                         inspections,
                         resolutionResult,
                         decomposedTreeRoot,

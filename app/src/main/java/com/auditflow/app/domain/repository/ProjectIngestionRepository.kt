@@ -1,6 +1,7 @@
 package com.auditflow.app.domain.repository
 
 import com.auditflow.app.domain.model.ProjectMetadata
+import com.auditflow.app.domain.model.RepositorySnapshot
 import com.auditflow.app.domain.model.SourceFileNode
 
 /**
@@ -39,6 +40,15 @@ interface ProjectIngestionRepository {
         branch: String? = null,
         onProgress: (Int, String) -> Unit = { _, _ -> }
     ): Result<Pair<ProjectMetadata, List<SourceFileNode>>>
+
+    /**
+     * Acquires a complete, internally consistent repository snapshot with version pinning and verification.
+     */
+    suspend fun acquireRepositorySnapshot(
+        repoUrlOrSlug: String,
+        branch: String? = null,
+        onProgress: (Int, String) -> Unit = { _, _ -> }
+    ): Result<RepositorySnapshot> = Result.failure(UnsupportedOperationException("Repository snapshot acquisition not implemented"))
 
     /**
      * Reads or fetches the raw text content of a specific file from local SAF or remote GitHub.

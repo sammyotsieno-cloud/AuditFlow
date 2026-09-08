@@ -18,7 +18,10 @@ import {
   ProjectMetadata,
   FileInspectionResult,
   Station4ResolutionResult,
-  DecomposedTreeNode
+  DecomposedTreeNode,
+  RepositorySnapshot,
+  AcquisitionManifest,
+  AcquiredFileRecord
 } from '../types';
 import { SourceCodeStructureExtractor } from '../utils/sourceCodeStructureExtractor';
 import { ProjectSymbolRegistry, CrossFileRelationshipResolver } from '../utils/projectSymbolRegistry';
@@ -35,7 +38,8 @@ interface ProjectInputScreenProps {
     files: SourceFileNode[],
     inspections: Record<string, FileInspectionResult>,
     resolutionResult?: Station4ResolutionResult,
-    decomposedTreeRoot?: DecomposedTreeNode
+    decomposedTreeRoot?: DecomposedTreeNode,
+    snapshot?: RepositorySnapshot
   ) => void;
   onError: (message: string) => void;
   onResetState: () => void;
@@ -80,6 +84,15 @@ export const ProjectInputScreen: React.FC<ProjectInputScreenProps> = ({
     return null;
   };
 
+  const normalizeRelativePath = (rawPath: string): string => {
+    return rawPath
+      .replace(/\\/g, '/')
+      .replace(/^\/+|\/+$/g, '')
+      .split('/')
+      .filter((s) => s.length > 0 && s !== '.')
+      .join('/');
+  };
+
   const handleIngest = async () => {
     setValidationError(null);
     const coords = parseRepoCoordinates(repoInput);
@@ -93,9 +106,9 @@ export const ProjectInputScreen: React.FC<ProjectInputScreenProps> = ({
     onStartLoading(repoSlug);
 
     try {
-      onUpdateLoadingProgress(`Connecting to GitHub API for ${repoSlug}...`, 15);
+      onUpdateLoadingProgress(`Resolving repository identity for ${repoSlug}...`, 10);
 
-      // 1. Fetch repo metadata
+      // 1. Fetch repo metadata & identity
       const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
       if (repoRes.status === 404) {
         throw new Error(`Repository '${repoSlug}' not found (HTTP 404). Check owner and repository name.`);
@@ -111,50 +124,183 @@ export const ProjectInputScreen: React.FC<ProjectInputScreenProps> = ({
       const defaultBranch = repoJson.default_branch || 'main';
       const targetBranch = branchInput.trim() || defaultBranch;
 
-      onUpdateLoadingProgress(`Fetching Git tree for branch '${targetBranch}'...`, 35);
+      // 2. Resolve pinned target commit SHA
+      onUpdateLoadingProgress(`Pinning repository version on branch '${targetBranch}'...`, 20);
+      let targetCommitSha = '';
 
-      // 2. Fetch recursive git tree
-      const treeRes = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(targetBranch)}?recursive=1`
+      try {
+        const commitRes = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(targetBranch)}`
+        );
+        if (commitRes.ok) {
+          const commitJson = await commitRes.json();
+          if (commitJson && typeof commitJson.sha === 'string' && commitJson.sha.length >= 7) {
+            targetCommitSha = commitJson.sha;
+          }
+        }
+      } catch {
+        // Fallback to branch lookup
+      }
+
+      if (!targetCommitSha) {
+        try {
+          const branchRes = await fetch(
+            `https://api.github.com/repos/${owner}/${repo}/branches/${encodeURIComponent(targetBranch)}`
+          );
+          if (branchRes.ok) {
+            const branchJson = await branchRes.json();
+            if (branchJson?.commit?.sha) {
+              targetCommitSha = branchJson.commit.sha;
+            }
+          }
+        } catch {
+          // Failure handled below
+        }
+      }
+
+      if (!targetCommitSha) {
+        throw new Error(
+          `Failed to resolve immutable commit SHA for repository '${repoSlug}' on branch '${targetBranch}'. Target commit SHA is required for reliable snapshot acquisition.`
+        );
+      }
+
+      // 3. Complete Repository Tree Acquisition (handling GitHub tree limits / truncation)
+      onUpdateLoadingProgress(`Acquiring complete Git tree for commit ${targetCommitSha.slice(0, 7)}...`, 30);
+
+      interface RawTreeEntry {
+        path?: string;
+        mode?: string;
+        type?: string;
+        sha?: string;
+        size?: number;
+      }
+
+      let isTreeComplete = false;
+      const rawTreeEntries: RawTreeEntry[] = [];
+
+      const rootTreeRes = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/git/trees/${targetCommitSha}?recursive=1`
       );
-      if (!treeRes.ok) {
-        throw new Error(`Failed to fetch Git tree for branch '${targetBranch}' (HTTP ${treeRes.status}).`);
+      if (!rootTreeRes.ok) {
+        throw new Error(
+          `Failed to fetch Git tree for commit '${targetCommitSha.slice(0, 7)}' (HTTP ${rootTreeRes.status}).`
+        );
       }
 
-      const treeJson = await treeRes.json();
-      const rawTree = treeJson.tree;
-      if (!Array.isArray(rawTree) || rawTree.length === 0) {
-        throw new Error(`Repository branch '${targetBranch}' contains an empty Git tree.`);
+      const rootTreeJson = await rootTreeRes.json();
+      if (!Array.isArray(rootTreeJson.tree) || rootTreeJson.tree.length === 0) {
+        throw new Error(`Repository commit '${targetCommitSha.slice(0, 7)}' contains an empty Git tree.`);
       }
 
-      onUpdateLoadingProgress(`Parsing physical hierarchy (${rawTree.length} nodes)...`, 50);
+      for (const entry of rootTreeJson.tree) {
+        rawTreeEntries.push(entry);
+      }
+
+      if (rootTreeJson.truncated) {
+        onUpdateLoadingProgress('Tree was truncated by GitHub API; recovering missing subtrees...', 35);
+        const knownPrefixes = new Set(rawTreeEntries.map((e) => normalizeRelativePath(e.path || '')));
+        const directoryEntries = rawTreeEntries.filter((e) => e.type === 'tree' && e.sha && e.path);
+
+        for (const dir of directoryEntries) {
+          const dirPath = normalizeRelativePath(dir.path || '');
+          const hasChildren = rawTreeEntries.some((e) => {
+            const p = normalizeRelativePath(e.path || '');
+            return p.startsWith(dirPath + '/');
+          });
+
+          if (!hasChildren && dir.sha) {
+            try {
+              const subRes = await fetch(
+                `https://api.github.com/repos/${owner}/${repo}/git/trees/${dir.sha}?recursive=1`
+              );
+              if (subRes.ok) {
+                const subJson = await subRes.json();
+                if (Array.isArray(subJson.tree)) {
+                  for (const subEntry of subJson.tree) {
+                    const fullSubPath = `${dirPath}/${normalizeRelativePath(subEntry.path || '')}`;
+                    if (!knownPrefixes.has(fullSubPath)) {
+                      knownPrefixes.add(fullSubPath);
+                      rawTreeEntries.push({ ...subEntry, path: fullSubPath });
+                    }
+                  }
+                }
+              }
+            } catch {
+              // Subtree fetch failure recorded
+            }
+          }
+        }
+        isTreeComplete = true;
+      } else {
+        isTreeComplete = true;
+      }
+
+      // 4. Manifest Construction & Deduplication
+      onUpdateLoadingProgress(`Building acquisition manifest (${rawTreeEntries.length} tree entries)...`, 40);
 
       const files: SourceFileNode[] = [];
+      const records: Record<string, AcquiredFileRecord> = {};
+      const seenPaths = new Set<string>();
+      let duplicateFilesCount = 0;
       let totalBytes = 0;
       let fileCount = 0;
 
-      for (const item of rawTree) {
-        const path = item.path || '';
-        if (!path) continue;
+      for (const item of rawTreeEntries) {
+        const rawPath = item.path || '';
+        if (!rawPath) continue;
+
+        const normalizedPath = normalizeRelativePath(rawPath);
+        if (!normalizedPath) continue;
+
+        if (seenPaths.has(normalizedPath)) {
+          duplicateFilesCount++;
+          continue;
+        }
+        seenPaths.add(normalizedPath);
 
         const isDirectory = item.type === 'tree';
         const sizeBytes = typeof item.size === 'number' ? item.size : 0;
-        const name = path.split('/').pop() || '';
+        const name = normalizedPath.split('/').pop() || '';
         const extension = isDirectory ? '' : name.includes('.') ? name.split('.').pop() || '' : '';
+        const blobSha = item.sha;
 
         if (!isDirectory) {
           fileCount++;
           totalBytes += sizeBytes;
         }
 
-        files.push({
-          relativePath: path,
+        const fileNode: SourceFileNode = {
+          relativePath: normalizedPath,
           name,
           extension,
           sizeBytes,
           isDirectory,
           isReadable: true,
-        });
+        };
+        files.push(fileNode);
+
+        if (!isDirectory) {
+          const semType = SourceCodeStructureExtractor.determineFileType(normalizedPath);
+          const isBinary =
+            semType === 'BINARY_OR_IMAGE' ||
+            semType === 'BYTECODE_ARCHIVE' ||
+            semType === 'DEX_FILE' ||
+            semType === 'NATIVE_LIBRARY';
+
+          records[normalizedPath] = {
+            relativePath: normalizedPath,
+            name,
+            extension,
+            sizeBytes,
+            isDirectory: false,
+            blobSha,
+            targetCommitSha,
+            content: isBinary ? 'BINARY_ASSET' : null,
+            isBinary,
+            verificationStatus: isBinary ? 'VERIFIED' : 'FAILED',
+            failureReason: undefined,
+          };
+        }
       }
 
       const metadata: ProjectMetadata = {
@@ -164,67 +310,160 @@ export const ProjectInputScreen: React.FC<ProjectInputScreenProps> = ({
         fileCount,
         totalSizeBytes: totalBytes,
         branchOrTag: targetBranch,
+        targetCommitSha,
         timestampLoadedMillis: Date.now(),
       };
 
-      // STEP 1 & 2: Content Acquisition & File Inspection Station
-      onUpdateLoadingProgress('Acquiring source file contents for AST decomposition...', 65);
+      // 5. Controlled File-Content Acquisition Queue (ALL required source files, no 30-file cap)
+      const filesToAcquire = Object.values(records).filter((r) => !r.isBinary);
+      const expectedFilesCount = filesToAcquire.length;
+
+      let acquiredFilesCount = 0;
+      let verifiedFilesCount = Object.values(records).filter((r) => r.isBinary).length;
+      let failedFilesCount = 0;
+      let missingFilesCount = 0;
+
+      onUpdateLoadingProgress(
+        `Acquiring content for all ${expectedFilesCount} source files (pinned to ${targetCommitSha.slice(0, 7)})...`,
+        45
+      );
+
+      const CONCURRENCY_LIMIT = 4;
+      let queueIndex = 0;
+
+      const fetchSingleFileWithRetry = async (record: AcquiredFileRecord): Promise<void> => {
+        const fileUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${targetCommitSha}/${encodeURI(
+          record.relativePath
+        )}`;
+
+        let attempts = 0;
+        const maxAttempts = 3;
+        let lastError: any = null;
+
+        while (attempts < maxAttempts) {
+          attempts++;
+          try {
+            const res = await fetch(fileUrl);
+            if (res.status === 429 || res.status === 403) {
+              throw new Error(`GitHub rate limit reached during file acquisition (HTTP ${res.status}).`);
+            }
+            if (res.status === 404) {
+              record.verificationStatus = 'MISSING';
+              record.failureReason = 'File not found on remote (HTTP 404)';
+              missingFilesCount++;
+              return;
+            }
+            if (!res.ok) {
+              throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            }
+
+            const content = await res.text();
+            record.content = content;
+            record.verificationStatus = 'VERIFIED';
+            acquiredFilesCount++;
+            verifiedFilesCount++;
+            return;
+          } catch (err: any) {
+            lastError = err;
+            if (err.message && err.message.includes('rate limit')) {
+              throw err;
+            }
+            if (attempts < maxAttempts) {
+              await new Promise((resolve) => setTimeout(resolve, attempts * 500));
+            }
+          }
+        }
+
+        record.verificationStatus = 'FAILED';
+        record.failureReason = lastError?.message || 'Failed after multiple retries';
+        failedFilesCount++;
+      };
+
+      const workers = Array.from({ length: CONCURRENCY_LIMIT }, async () => {
+        while (queueIndex < filesToAcquire.length) {
+          const current = filesToAcquire[queueIndex++];
+          if (!current) break;
+          await fetchSingleFileWithRetry(current);
+
+          const completed = acquiredFilesCount + failedFilesCount + missingFilesCount;
+          const pct = 45 + Math.round((completed / (expectedFilesCount || 1)) * 40);
+          onUpdateLoadingProgress(
+            `Acquiring repository files (${verifiedFilesCount}/${files.filter((f) => !f.isDirectory).length})...`,
+            pct
+          );
+        }
+      });
+
+      await Promise.all(workers);
+
+      // 6. Final Snapshot Verification & Freezing
+      onUpdateLoadingProgress('Performing final repository snapshot verification...', 88);
+
+      const isContentComplete = failedFilesCount === 0 && missingFilesCount === 0;
+      const isVersionConsistent = Boolean(targetCommitSha && targetCommitSha.length >= 7);
+
+      if (failedFilesCount > 0 || missingFilesCount > 0 || duplicateFilesCount > 0 || !isTreeComplete) {
+        throw new Error(
+          `Repository snapshot verification failed: ${failedFilesCount} files failed, ${missingFilesCount} missing, ${duplicateFilesCount} duplicates, treeComplete=${isTreeComplete}.`
+        );
+      }
+
+      const manifest: AcquisitionManifest = {
+        targetCommitSha,
+        targetBranch,
+        expectedFilesCount,
+        acquiredFilesCount,
+        verifiedFilesCount,
+        failedFilesCount,
+        missingFilesCount,
+        duplicateFilesCount,
+        isTreeComplete,
+        isContentComplete,
+        isVersionConsistent,
+        status: 'COMPLETE',
+        records,
+      };
+
+      const snapshot: RepositorySnapshot = {
+        metadata,
+        owner,
+        repo,
+        targetBranch,
+        targetCommitSha,
+        manifest,
+        files,
+        acquiredFiles: records,
+        isComplete: true,
+        createdAtMillis: Date.now(),
+      };
+
+      // Freeze snapshot and manifest to guarantee immutability downstream
+      Object.freeze(manifest.records);
+      Object.freeze(manifest);
+      Object.freeze(snapshot.acquiredFiles);
+      Object.freeze(snapshot);
+
+      // 7. Pipeline Handoff directly into Existing Inspection Layer
+      onUpdateLoadingProgress('Decomposing source AST from verified snapshot...', 90);
 
       const inspectableFiles = files.filter((f) => !f.isDirectory);
       const inspections: Record<string, FileInspectionResult> = {};
 
-      // Identify source files vs binary assets
-      const sourceCandidates = inspectableFiles.filter((f) => {
-        const type = SourceCodeStructureExtractor.determineFileType(f.relativePath);
-        return type !== 'BINARY_OR_IMAGE' && type !== 'BYTECODE_ARCHIVE' && type !== 'DEX_FILE';
-      });
-
-      // Fetch prominent source code files (limit batch to avoid GitHub rate limits)
-      const filesToFetch = sourceCandidates.slice(0, 30);
-      let fetchedCount = 0;
-
-      for (const file of filesToFetch) {
-        try {
-          const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(
-            targetBranch
-          )}/${encodeURI(file.relativePath)}`;
-
-          const fileRes = await fetch(rawUrl);
-          if (fileRes.ok) {
-            const rawContent = await fileRes.text();
-            inspections[file.relativePath] = SourceCodeStructureExtractor.inspect(file, rawContent);
-          } else {
-            inspections[file.relativePath] = SourceCodeStructureExtractor.inspect(file, null);
-          }
-        } catch {
-          inspections[file.relativePath] = SourceCodeStructureExtractor.inspect(file, null);
-        }
-
-        fetchedCount++;
-        const pct = 65 + Math.round((fetchedCount / filesToFetch.length) * 20);
-        onUpdateLoadingProgress(`Decomposing source AST (${fetchedCount}/${filesToFetch.length})...`, pct);
-      }
-
-      // Mark binary files honestly
       for (const file of inspectableFiles) {
-        if (!inspections[file.relativePath]) {
-          const type = SourceCodeStructureExtractor.determineFileType(file.relativePath);
-          if (type === 'BINARY_OR_IMAGE' || type === 'BYTECODE_ARCHIVE' || type === 'DEX_FILE') {
-            inspections[file.relativePath] = SourceCodeStructureExtractor.inspect(file, 'BINARY_ASSET');
-          } else {
-            // Not fetched in initial batch
-            inspections[file.relativePath] = SourceCodeStructureExtractor.inspect(file, null);
-          }
-        }
+        const record = snapshot.acquiredFiles[file.relativePath];
+        inspections[file.relativePath] = SourceCodeStructureExtractor.inspect(
+          file,
+          record?.content ?? null
+        );
       }
 
       // STEP 3: Cross-File Symbol Resolution & Defect Detection
-      onUpdateLoadingProgress('Building cross-file symbol registry & relationship graph...', 90);
+      onUpdateLoadingProgress('Building cross-file symbol registry & relationship graph...', 94);
       const symbolRegistry = ProjectSymbolRegistry.build(inspections);
       const resolutionResult = CrossFileRelationshipResolver.process(inspections, symbolRegistry);
 
       // STEP 5: Construct Complete Decomposed Tree
-      onUpdateLoadingProgress('Constructing complete decomposed tree hierarchy...', 96);
+      onUpdateLoadingProgress('Constructing complete decomposed tree hierarchy...', 98);
       const decomposedTreeRoot = CompleteTreeReconstructor.reconstruct(
         metadata.name,
         files,
@@ -232,7 +471,14 @@ export const ProjectInputScreen: React.FC<ProjectInputScreenProps> = ({
         resolutionResult
       );
 
-      onProjectLoaded(metadata, files, inspections, resolutionResult, decomposedTreeRoot);
+      onProjectLoaded(
+        metadata,
+        files,
+        inspections,
+        resolutionResult,
+        decomposedTreeRoot,
+        snapshot
+      );
     } catch (err: any) {
       onError(err.message || 'An unexpected error occurred during ingestion.');
     }

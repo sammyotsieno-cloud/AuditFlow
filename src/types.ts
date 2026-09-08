@@ -20,7 +20,64 @@ export interface ProjectMetadata {
   fileCount: number;
   totalSizeBytes: number;
   branchOrTag?: string;
+  targetCommitSha?: string;
   timestampLoadedMillis: number;
+}
+
+// ============================================================================
+// COMPLETE REPOSITORY SNAPSHOT ACQUISITION TYPES
+// ============================================================================
+
+export type AcquisitionStatus =
+  | 'NOT_STARTED'
+  | 'RESOLVING_VERSION'
+  | 'ACQUIRING_TREE'
+  | 'ACQUIRING_CONTENT'
+  | 'VERIFYING'
+  | 'COMPLETE'
+  | 'FAILED';
+
+export interface AcquiredFileRecord {
+  relativePath: string;
+  name: string;
+  extension: string;
+  sizeBytes: number;
+  isDirectory: boolean;
+  blobSha?: string;
+  targetCommitSha: string;
+  content?: string | null;
+  isBinary: boolean;
+  verificationStatus: 'VERIFIED' | 'FAILED' | 'MISSING';
+  failureReason?: string;
+}
+
+export interface AcquisitionManifest {
+  targetCommitSha: string;
+  targetBranch: string;
+  expectedFilesCount: number;
+  acquiredFilesCount: number;
+  verifiedFilesCount: number;
+  failedFilesCount: number;
+  missingFilesCount: number;
+  duplicateFilesCount: number;
+  isTreeComplete: boolean;
+  isContentComplete: boolean;
+  isVersionConsistent: boolean;
+  status: AcquisitionStatus;
+  records: Record<string, AcquiredFileRecord>;
+}
+
+export interface RepositorySnapshot {
+  metadata: ProjectMetadata;
+  owner: string;
+  repo: string;
+  targetBranch: string;
+  targetCommitSha: string;
+  manifest: AcquisitionManifest;
+  files: SourceFileNode[];
+  acquiredFiles: Record<string, AcquiredFileRecord>;
+  isComplete: boolean;
+  createdAtMillis: number;
 }
 
 export type ProjectState =
@@ -30,6 +87,7 @@ export type ProjectState =
       kind: 'ProjectLoaded';
       metadata: ProjectMetadata;
       files: SourceFileNode[];
+      snapshot?: RepositorySnapshot;
       inspections?: Record<string, FileInspectionResult>;
       resolutionResult?: Station4ResolutionResult;
       decomposedTreeRoot?: DecomposedTreeNode;
