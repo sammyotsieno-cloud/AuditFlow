@@ -3,7 +3,6 @@ package com.auditflow.app.data.repository
 import com.auditflow.app.domain.model.AcquiredFileRecord
 import com.auditflow.app.domain.model.AcquisitionManifest
 import com.auditflow.app.domain.model.AcquisitionStatus
-import com.auditflow.app.domain.model.ArchiveContentIdentity
 import com.auditflow.app.domain.model.ArtifactIdentity
 import com.auditflow.app.domain.model.ProjectMetadata
 import com.auditflow.app.domain.model.ProjectSourceKind
@@ -17,158 +16,73 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Contract-level tests for ProjectIngestionRepositoryImpl.
+ * Unit tests for the GitHub acquisition evidence contract produced by
+ * ProjectIngestionRepositoryImpl.
  *
- * These tests protect the GitHub repository acquisition model without
- * performing live network access.
+ * These tests deliberately do not perform live GitHub network acquisition.
+ * Live network behavior depends on repository state, GitHub availability,
+ * authentication/rate limits, and external network conditions.
  *
- * The production acquisition pipeline is intentionally treated as:
+ * The production acquisition invariant is:
  *
  *     Acquire once
  *          ↓
  *     Verify once
  *          ↓
- *     Freeze snapshot
+ *     Freeze RepositorySnapshot
  *          ↓
  *     Reuse downstream
  *
- * These tests therefore validate the domain evidence represented by
- * RepositorySnapshot, AcquisitionManifest and AcquiredFileRecord.
+ * This test suite protects the evidence required for that invariant:
  *
- * Live GitHub acquisition is not performed here because deterministic
- * repository tests must not depend on network availability, GitHub rate
- * limits, credentials, or a mutable remote repository.
+ * - immutable target commit identity
+ * - expected/acquired/verified accounting
+ * - complete tree/content state
+ * - explicit failure and missing states
+ * - Git blob verification evidence
+ * - acquired size evidence
+ * - text content preservation
+ * - binary byte preservation
+ * - snapshot/manifest consistency
+ *
+ * The tests intentionally do not introduce another acquisition mechanism.
  */
 class ProjectIngestionRepositoryImplTest {
 
     @Test
-    fun acquisitionManifest_completeSnapshot_hasConsistentAccounting() {
-        val records = mapOf(
-            "src/main.kt" to verifiedTextRecord(
-                relativePath = "src/main.kt",
-                content = "fun main() = println(\"AuditFlow\")",
-                blobSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-            ),
-            "README.md" to verifiedTextRecord(
-                relativePath = "README.md",
-                content = "# AuditFlow",
-                blobSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-            )
-        )
+    fun verifiedTextRecord_containsCompleteVerificationEvidence() {
+        val content = "fun main() = println(\"AuditFlow\")"
 
-        val manifest = AcquisitionManifest(
-            targetCommitSha = TEST_COMMIT_SHA,
-            targetBranch = "main",
-            expectedFilesCount = 2,
-            acquiredFilesCount = 2,
-            verifiedFilesCount = 2,
-            failedFilesCount = 0,
-            missingFilesCount = 0,
-            duplicateFilesCount = 0,
-            isTreeComplete = true,
-            isContentComplete = true,
-            isVersionConsistent = true,
-            status = AcquisitionStatus.COMPLETE,
-            records = records
-        )
-
-        assertEquals(
-            manifest.expectedFilesCount,
-            manifest.acquiredFilesCount
-        )
-
-        assertEquals(
-            manifest.acquiredFilesCount,
-            manifest.verifiedFilesCount
-        )
-
-        assertEquals(0, manifest.failedFilesCount)
-        assertEquals(0, manifest.missingFilesCount)
-        assertEquals(0, manifest.duplicateFilesCount)
-
-        assertTrue(manifest.isTreeComplete)
-        assertTrue(manifest.isContentComplete)
-        assertTrue(manifest.isVersionConsistent)
-        assertEquals(AcquisitionStatus.COMPLETE, manifest.status)
-
-        assertEquals(
-            manifest.expectedFilesCount,
-            manifest.records.size
-        )
-    }
-
-    @Test
-    fun acquisitionManifest_incompleteContent_cannotClaimCompleteEvidence() {
-        val records = mapOf(
-            "src/main.kt" to verifiedTextRecord(
-                relativePath = "src/main.kt",
-                content = "fun main() = println(\"AuditFlow\")",
-                blobSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-            ),
-            "src/Missing.kt" to AcquiredFileRecord(
-                relativePath = "src/Missing.kt",
-                name = "Missing.kt",
-                extension = "kt",
-                sizeBytes = 100L,
-                isDirectory = false,
-                blobSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                targetCommitSha = TEST_COMMIT_SHA,
-                acquiredSizeBytes = null,
-                verifiedBlobSha = null,
-                isBinary = false,
-                verificationStatus = AcquiredFileRecord.VerificationStatus.MISSING,
-                failureReason = "File could not be acquired"
-            )
-        )
-
-        val manifest = AcquisitionManifest(
-            targetCommitSha = TEST_COMMIT_SHA,
-            targetBranch = "main",
-            expectedFilesCount = 2,
-            acquiredFilesCount = 2,
-            verifiedFilesCount = 1,
-            failedFilesCount = 0,
-            missingFilesCount = 1,
-            duplicateFilesCount = 0,
-            isTreeComplete = true,
-            isContentComplete = false,
-            isVersionConsistent = true,
-            status = AcquisitionStatus.FAILED,
-            records = records
-        )
-
-        assertFalse(manifest.isContentComplete)
-        assertEquals(1, manifest.missingFilesCount)
-        assertEquals(1, manifest.verifiedFilesCount)
-        assertEquals(AcquisitionStatus.FAILED, manifest.status)
-    }
-
-    @Test
-    fun acquiredFileRecord_verifiedTextFile_containsDecodedContentAndVerificationEvidence() {
         val record = verifiedTextRecord(
             relativePath = "src/main.kt",
-            content = "fun main() = println(\"AuditFlow\")",
+            content = content,
             blobSha = TEST_BLOB_SHA
         )
-
-        assertFalse(record.isDirectory)
-        assertFalse(record.isBinary)
 
         assertEquals("src/main.kt", record.relativePath)
         assertEquals("main.kt", record.name)
         assertEquals("kt", record.extension)
 
-        assertNotNull(record.content)
-        assertEquals(
-            "fun main() = println(\"AuditFlow\")",
-            record.content
-        )
+        assertFalse(record.isDirectory)
+        assertFalse(record.isBinary)
 
+        assertEquals(content, record.content)
         assertNull(record.contentBytes)
 
-        assertEquals(record.sizeBytes, record.acquiredSizeBytes)
-        assertEquals(TEST_BLOB_SHA, record.blobSha)
-        assertEquals(TEST_BLOB_SHA, record.verifiedBlobSha)
+        assertEquals(
+            record.sizeBytes,
+            record.acquiredSizeBytes
+        )
+
+        assertEquals(
+            TEST_BLOB_SHA,
+            record.blobSha
+        )
+
+        assertEquals(
+            TEST_BLOB_SHA,
+            record.verifiedBlobSha
+        )
 
         assertEquals(
             AcquiredFileRecord.VerificationStatus.VERIFIED,
@@ -180,7 +94,7 @@ class ProjectIngestionRepositoryImplTest {
     }
 
     @Test
-    fun acquiredFileRecord_verifiedBinaryFile_containsOriginalBytesAndNoTextContent() {
+    fun verifiedBinaryRecord_preservesOriginalBytes() {
         val bytes = byteArrayOf(
             0x50,
             0x4B,
@@ -201,7 +115,8 @@ class ProjectIngestionRepositoryImplTest {
             acquiredSizeBytes = bytes.size.toLong(),
             verifiedBlobSha = TEST_BLOB_SHA,
             isBinary = true,
-            verificationStatus = AcquiredFileRecord.VerificationStatus.VERIFIED,
+            verificationStatus =
+                AcquiredFileRecord.VerificationStatus.VERIFIED,
             failureReason = null
         )
 
@@ -210,26 +125,38 @@ class ProjectIngestionRepositoryImplTest {
         assertNotNull(record.contentBytes)
 
         assertEquals(
+            bytes.toList(),
+            record.contentBytes!!.toList()
+        )
+
+        assertEquals(
             bytes.size.toLong(),
             record.acquiredSizeBytes
+        )
+
+        assertEquals(
+            TEST_BLOB_SHA,
+            record.blobSha
+        )
+
+        assertEquals(
+            TEST_BLOB_SHA,
+            record.verifiedBlobSha
         )
 
         assertEquals(
             AcquiredFileRecord.VerificationStatus.VERIFIED,
             record.verificationStatus
         )
-
-        assertEquals(TEST_BLOB_SHA, record.blobSha)
-        assertEquals(TEST_BLOB_SHA, record.verifiedBlobSha)
     }
 
     @Test
-    fun acquiredFileRecord_defaultVerificationStatus_isFailClosed() {
+    fun newAcquiredFileRecord_failsClosedUntilVerificationOccurs() {
         val record = AcquiredFileRecord(
             relativePath = "src/main.kt",
             name = "main.kt",
             extension = "kt",
-            sizeBytes = 10L,
+            sizeBytes = 100L,
             isDirectory = false,
             blobSha = TEST_BLOB_SHA,
             targetCommitSha = TEST_COMMIT_SHA
@@ -240,17 +167,18 @@ class ProjectIngestionRepositoryImplTest {
             record.verificationStatus
         )
 
-        assertNull(record.verifiedBlobSha)
         assertNull(record.acquiredSizeBytes)
+        assertNull(record.verifiedBlobSha)
+        assertNull(record.failureReason)
     }
 
     @Test
-    fun failedFileRecord_neverContainsSuccessfulVerificationEvidence() {
+    fun failedRecord_doesNotContainVerificationEvidence() {
         val record = AcquiredFileRecord(
             relativePath = "src/Broken.kt",
             name = "Broken.kt",
             extension = "kt",
-            sizeBytes = 50L,
+            sizeBytes = 100L,
             isDirectory = false,
             blobSha = TEST_BLOB_SHA,
             targetCommitSha = TEST_COMMIT_SHA,
@@ -259,8 +187,9 @@ class ProjectIngestionRepositoryImplTest {
             acquiredSizeBytes = null,
             verifiedBlobSha = null,
             isBinary = false,
-            verificationStatus = AcquiredFileRecord.VerificationStatus.FAILED,
-            failureReason = "Acquisition failed"
+            verificationStatus =
+                AcquiredFileRecord.VerificationStatus.FAILED,
+            failureReason = "Git blob verification failed"
         )
 
         assertEquals(
@@ -268,25 +197,29 @@ class ProjectIngestionRepositoryImplTest {
             record.verificationStatus
         )
 
-        assertNull(record.verifiedBlobSha)
         assertNull(record.acquiredSizeBytes)
-        assertNull(record.content)
-        assertNull(record.contentBytes)
+        assertNull(record.verifiedBlobSha)
         assertNotNull(record.failureReason)
     }
 
     @Test
-    fun missingFileRecord_isExplicitlyMarkedMissing() {
+    fun missingRecord_isExplicitlyMarkedMissing() {
         val record = AcquiredFileRecord(
-            relativePath = "missing/File.kt",
-            name = "File.kt",
+            relativePath = "src/Missing.kt",
+            name = "Missing.kt",
             extension = "kt",
-            sizeBytes = 25L,
+            sizeBytes = 100L,
             isDirectory = false,
             blobSha = TEST_BLOB_SHA,
             targetCommitSha = TEST_COMMIT_SHA,
-            verificationStatus = AcquiredFileRecord.VerificationStatus.MISSING,
-            failureReason = "Remote file was not available"
+            content = null,
+            contentBytes = null,
+            acquiredSizeBytes = null,
+            verifiedBlobSha = null,
+            isBinary = false,
+            verificationStatus =
+                AcquiredFileRecord.VerificationStatus.MISSING,
+            failureReason = "File could not be acquired"
         )
 
         assertEquals(
@@ -294,24 +227,186 @@ class ProjectIngestionRepositoryImplTest {
             record.verificationStatus
         )
 
-        assertNull(record.verifiedBlobSha)
         assertNull(record.acquiredSizeBytes)
+        assertNull(record.verifiedBlobSha)
         assertNotNull(record.failureReason)
     }
 
     @Test
-    fun repositorySnapshot_completeSnapshot_preservesSingleImmutableTargetVersion() {
+    fun completeManifest_hasConsistentAcquisitionAccounting() {
         val records = mapOf(
+            "README.md" to verifiedTextRecord(
+                relativePath = "README.md",
+                content = "# AuditFlow",
+                blobSha = TEST_BLOB_SHA_1
+            ),
             "src/main.kt" to verifiedTextRecord(
                 relativePath = "src/main.kt",
-                content = "fun main() = println(\"AuditFlow\")",
+                content = "fun main() {}",
+                blobSha = TEST_BLOB_SHA_2
+            )
+        )
+
+        val manifest = completeManifest(records)
+
+        assertEquals(
+            2,
+            manifest.expectedFilesCount
+        )
+
+        assertEquals(
+            2,
+            manifest.acquiredFilesCount
+        )
+
+        assertEquals(
+            2,
+            manifest.verifiedFilesCount
+        )
+
+        assertEquals(
+            0,
+            manifest.failedFilesCount
+        )
+
+        assertEquals(
+            0,
+            manifest.missingFilesCount
+        )
+
+        assertEquals(
+            0,
+            manifest.duplicateFilesCount
+        )
+
+        assertTrue(manifest.isTreeComplete)
+        assertTrue(manifest.isContentComplete)
+        assertTrue(manifest.isVersionConsistent)
+
+        assertEquals(
+            AcquisitionStatus.COMPLETE,
+            manifest.status
+        )
+
+        assertEquals(
+            manifest.expectedFilesCount,
+            manifest.records.size
+        )
+
+        assertTrue(
+            manifest.records.values.all {
+                it.verificationStatus ==
+                    AcquiredFileRecord.VerificationStatus.VERIFIED
+            }
+        )
+    }
+
+    @Test
+    fun incompleteManifest_explicitlyReportsMissingContent() {
+        val verifiedRecord = verifiedTextRecord(
+            relativePath = "README.md",
+            content = "# AuditFlow",
+            blobSha = TEST_BLOB_SHA_1
+        )
+
+        val missingRecord = AcquiredFileRecord(
+            relativePath = "src/Missing.kt",
+            name = "Missing.kt",
+            extension = "kt",
+            sizeBytes = 100L,
+            isDirectory = false,
+            blobSha = TEST_BLOB_SHA_2,
+            targetCommitSha = TEST_COMMIT_SHA,
+            verificationStatus =
+                AcquiredFileRecord.VerificationStatus.MISSING,
+            failureReason = "File could not be acquired"
+        )
+
+        val records = mapOf(
+            verifiedRecord.relativePath to verifiedRecord,
+            missingRecord.relativePath to missingRecord
+        )
+
+        val manifest = AcquisitionManifest(
+            targetCommitSha = TEST_COMMIT_SHA,
+            targetBranch = TEST_BRANCH,
+            expectedFilesCount = 2,
+            acquiredFilesCount = 2,
+            verifiedFilesCount = 1,
+            failedFilesCount = 0,
+            missingFilesCount = 1,
+            duplicateFilesCount = 0,
+            isTreeComplete = true,
+            isContentComplete = false,
+            isVersionConsistent = true,
+            status = AcquisitionStatus.FAILED,
+            records = records
+        )
+
+        assertEquals(2, manifest.expectedFilesCount)
+        assertEquals(2, manifest.acquiredFilesCount)
+        assertEquals(1, manifest.verifiedFilesCount)
+        assertEquals(1, manifest.missingFilesCount)
+
+        assertTrue(manifest.isTreeComplete)
+        assertFalse(manifest.isContentComplete)
+        assertTrue(manifest.isVersionConsistent)
+
+        assertEquals(
+            AcquisitionStatus.FAILED,
+            manifest.status
+        )
+    }
+
+    @Test
+    fun completeManifest_requiresEveryFileToBeVerified() {
+        val verified = verifiedTextRecord(
+            relativePath = "README.md",
+            content = "# AuditFlow",
+            blobSha = TEST_BLOB_SHA_1
+        )
+
+        val failed = AcquiredFileRecord(
+            relativePath = "src/Broken.kt",
+            name = "Broken.kt",
+            extension = "kt",
+            sizeBytes = 50L,
+            isDirectory = false,
+            blobSha = TEST_BLOB_SHA_2,
+            targetCommitSha = TEST_COMMIT_SHA,
+            verificationStatus =
+                AcquiredFileRecord.VerificationStatus.FAILED,
+            failureReason = "Hash mismatch"
+        )
+
+        val records = mapOf(
+            verified.relativePath to verified,
+            failed.relativePath to failed
+        )
+
+        val allVerified = records.values.all {
+            it.verificationStatus ==
+                AcquiredFileRecord.VerificationStatus.VERIFIED &&
+                it.verifiedBlobSha != null &&
+                it.acquiredSizeBytes != null
+        }
+
+        assertFalse(allVerified)
+    }
+
+    @Test
+    fun completeManifest_requiresVersionConsistency() {
+        val records = mapOf(
+            "README.md" to verifiedTextRecord(
+                relativePath = "README.md",
+                content = "# AuditFlow",
                 blobSha = TEST_BLOB_SHA
             )
         )
 
         val manifest = AcquisitionManifest(
             targetCommitSha = TEST_COMMIT_SHA,
-            targetBranch = "main",
+            targetBranch = TEST_BRANCH,
             expectedFilesCount = 1,
             acquiredFilesCount = 1,
             verifiedFilesCount = 1,
@@ -320,18 +415,39 @@ class ProjectIngestionRepositoryImplTest {
             duplicateFilesCount = 0,
             isTreeComplete = true,
             isContentComplete = true,
-            isVersionConsistent = true,
-            status = AcquisitionStatus.COMPLETE,
+            isVersionConsistent = false,
+            status = AcquisitionStatus.FAILED,
             records = records
         )
 
+        assertFalse(manifest.isVersionConsistent)
+        assertEquals(
+            AcquisitionStatus.FAILED,
+            manifest.status
+        )
+    }
+
+    @Test
+    fun repositorySnapshot_preservesSingleTargetCommitAcrossAllLayers() {
+        val record = verifiedTextRecord(
+            relativePath = "README.md",
+            content = "# AuditFlow",
+            blobSha = TEST_BLOB_SHA
+        )
+
+        val records = mapOf(
+            record.relativePath to record
+        )
+
+        val manifest = completeManifest(records)
+
         val metadata = ProjectMetadata(
-            name = "AuditFlow",
+            name = TEST_REPO,
             pathOrUri = "https://github.com/$TEST_OWNER/$TEST_REPO",
             sourceKind = ProjectSourceKind.GITHUB_REPOSITORY,
             fileCount = 1,
-            totalSizeBytes = records.values.sumOf { it.sizeBytes },
-            branchOrTag = "main",
+            totalSizeBytes = record.sizeBytes,
+            branchOrTag = TEST_BRANCH,
             targetCommitSha = TEST_COMMIT_SHA,
             artifactIdentity = ArtifactIdentity.REPOSITORY
         )
@@ -340,15 +456,15 @@ class ProjectIngestionRepositoryImplTest {
             metadata = metadata,
             owner = TEST_OWNER,
             repo = TEST_REPO,
-            targetBranch = "main",
+            targetBranch = TEST_BRANCH,
             targetCommitSha = TEST_COMMIT_SHA,
             manifest = manifest,
             files = listOf(
                 SourceFileNode(
-                    name = "main.kt",
-                    relativePath = "src/main.kt",
-                    extension = "kt",
-                    sizeBytes = records.getValue("src/main.kt").sizeBytes,
+                    relativePath = record.relativePath,
+                    name = record.name,
+                    extension = record.extension,
+                    sizeBytes = record.sizeBytes,
                     isDirectory = false
                 )
             ),
@@ -373,72 +489,73 @@ class ProjectIngestionRepositoryImplTest {
             snapshot.metadata.targetCommitSha
         )
 
-        assertEquals("main", snapshot.targetBranch)
-        assertEquals("main", snapshot.manifest.targetBranch)
+        assertEquals(
+            TEST_COMMIT_SHA,
+            record.targetCommitSha
+        )
 
         assertEquals(
-            snapshot.manifest.records,
-            snapshot.acquiredFiles
+            TEST_BRANCH,
+            snapshot.targetBranch
+        )
+
+        assertEquals(
+            TEST_BRANCH,
+            snapshot.manifest.targetBranch
         )
     }
 
     @Test
-    fun repositorySnapshot_fileAccounting_matchesManifest() {
+    fun repositorySnapshot_manifestAndAcquiredFilesRepresentSameRecords() {
         val records = mapOf(
             "README.md" to verifiedTextRecord(
                 relativePath = "README.md",
                 content = "# AuditFlow",
-                blobSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                blobSha = TEST_BLOB_SHA_1
             ),
             "src/main.kt" to verifiedTextRecord(
                 relativePath = "src/main.kt",
                 content = "fun main() {}",
-                blobSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                blobSha = TEST_BLOB_SHA_2
             )
         )
 
-        val manifest = AcquisitionManifest(
-            targetCommitSha = TEST_COMMIT_SHA,
-            targetBranch = "main",
-            expectedFilesCount = 2,
-            acquiredFilesCount = 2,
-            verifiedFilesCount = 2,
-            failedFilesCount = 0,
-            missingFilesCount = 0,
-            duplicateFilesCount = 0,
-            isTreeComplete = true,
-            isContentComplete = true,
-            isVersionConsistent = true,
-            status = AcquisitionStatus.COMPLETE,
-            records = records
-        )
+        val manifest = completeManifest(records)
 
         val snapshot = RepositorySnapshot(
             metadata = ProjectMetadata(
-                name = "AuditFlow",
-                pathOrUri = "https://github.com/$TEST_OWNER/$TEST_REPO",
+                name = TEST_REPO,
+                pathOrUri =
+                    "https://github.com/$TEST_OWNER/$TEST_REPO",
                 sourceKind = ProjectSourceKind.GITHUB_REPOSITORY,
-                fileCount = 2,
-                totalSizeBytes = records.values.sumOf { it.sizeBytes },
-                branchOrTag = "main",
-                targetCommitSha = TEST_COMMIT_SHA
+                fileCount = records.size,
+                totalSizeBytes =
+                    records.values.sumOf { it.sizeBytes },
+                branchOrTag = TEST_BRANCH,
+                targetCommitSha = TEST_COMMIT_SHA,
+                artifactIdentity = ArtifactIdentity.REPOSITORY
             ),
             owner = TEST_OWNER,
             repo = TEST_REPO,
-            targetBranch = "main",
+            targetBranch = TEST_BRANCH,
             targetCommitSha = TEST_COMMIT_SHA,
             manifest = manifest,
             files = records.values.map { record ->
                 SourceFileNode(
-                    name = record.name,
                     relativePath = record.relativePath,
+                    name = record.name,
                     extension = record.extension,
                     sizeBytes = record.sizeBytes,
-                    isDirectory = record.isDirectory
+                    isDirectory = false
                 )
             },
             acquiredFiles = records,
             isComplete = true
+        )
+
+        assertEquals(
+            snapshot.manifest.records,
+            snapshot.acquiredFiles
         )
 
         assertEquals(
@@ -450,39 +567,19 @@ class ProjectIngestionRepositoryImplTest {
             snapshot.manifest.acquiredFilesCount,
             snapshot.files.size
         )
-
-        assertEquals(
-            snapshot.manifest.verifiedFilesCount,
-            snapshot.acquiredFiles.values.count {
-                it.verificationStatus ==
-                    AcquiredFileRecord.VerificationStatus.VERIFIED
-            }
-        )
     }
 
     @Test
-    fun repositorySnapshot_completeState_requiresCompleteManifestEvidence() {
-        val manifest = AcquisitionManifest(
-            targetCommitSha = TEST_COMMIT_SHA,
-            targetBranch = "main",
-            expectedFilesCount = 1,
-            acquiredFilesCount = 1,
-            verifiedFilesCount = 1,
-            failedFilesCount = 0,
-            missingFilesCount = 0,
-            duplicateFilesCount = 0,
-            isTreeComplete = true,
-            isContentComplete = true,
-            isVersionConsistent = true,
-            status = AcquisitionStatus.COMPLETE,
-            records = mapOf(
-                "README.md" to verifiedTextRecord(
-                    relativePath = "README.md",
-                    content = "# AuditFlow",
-                    blobSha = TEST_BLOB_SHA
-                )
+    fun repositorySnapshot_completeEvidence_canBeDeterminedFromManifest() {
+        val records = mapOf(
+            "README.md" to verifiedTextRecord(
+                relativePath = "README.md",
+                content = "# AuditFlow",
+                blobSha = TEST_BLOB_SHA
             )
         )
+
+        val manifest = completeManifest(records)
 
         val evidenceIsComplete =
             manifest.status == AcquisitionStatus.COMPLETE &&
@@ -495,104 +592,68 @@ class ProjectIngestionRepositoryImplTest {
                 manifest.expectedFilesCount ==
                     manifest.acquiredFilesCount &&
                 manifest.acquiredFilesCount ==
-                    manifest.verifiedFilesCount
+                    manifest.verifiedFilesCount &&
+                manifest.records.values.all {
+                    it.verificationStatus ==
+                        AcquiredFileRecord.VerificationStatus.VERIFIED &&
+                        it.verifiedBlobSha != null &&
+                        it.acquiredSizeBytes != null
+                }
 
         assertTrue(evidenceIsComplete)
     }
 
     @Test
-    fun repositorySnapshot_binaryEvidence_isPreservedAsBytes() {
-        val bytes = byteArrayOf(
-            0x00,
-            0x01,
-            0x02,
-            0x03
-        )
-
+    fun binaryRecord_doesNotExposeTextContentAsRepositorySource() {
         val record = AcquiredFileRecord(
             relativePath = "assets/data.bin",
             name = "data.bin",
             extension = "bin",
-            sizeBytes = bytes.size.toLong(),
+            sizeBytes = 4L,
             isDirectory = false,
             blobSha = TEST_BLOB_SHA,
             targetCommitSha = TEST_COMMIT_SHA,
             content = null,
-            contentBytes = bytes,
-            acquiredSizeBytes = bytes.size.toLong(),
+            contentBytes = byteArrayOf(
+                0x00,
+                0x01,
+                0x02,
+                0x03
+            ),
+            acquiredSizeBytes = 4L,
             verifiedBlobSha = TEST_BLOB_SHA,
             isBinary = true,
-            verificationStatus = AcquiredFileRecord.VerificationStatus.VERIFIED
+            verificationStatus =
+                AcquiredFileRecord.VerificationStatus.VERIFIED
         )
 
         assertTrue(record.isBinary)
         assertNull(record.content)
         assertNotNull(record.contentBytes)
-        assertEquals(bytes.toList(), record.contentBytes!!.toList())
     }
 
     @Test
-    fun repositorySnapshot_textEvidence_isPreservedAsText() {
-        val content = """
-            package example
-
-            fun hello() {
-                println("AuditFlow")
-            }
-        """.trimIndent()
-
+    fun textRecord_doesNotStoreDuplicateBinaryPayload() {
         val record = verifiedTextRecord(
-            relativePath = "src/Hello.kt",
-            content = content,
+            relativePath = "src/main.kt",
+            content = "fun main() {}",
             blobSha = TEST_BLOB_SHA
         )
 
         assertFalse(record.isBinary)
-        assertEquals(content, record.content)
+        assertNotNull(record.content)
         assertNull(record.contentBytes)
     }
 
-    @Test
-    fun repositoryIdentity_isGitHubRepository() {
-        val metadata = ProjectMetadata(
-            name = "AuditFlow",
-            pathOrUri = "https://github.com/$TEST_OWNER/$TEST_REPO",
-            sourceKind = ProjectSourceKind.GITHUB_REPOSITORY,
-            branchOrTag = "main",
+    private fun completeManifest(
+        records: Map<String, AcquiredFileRecord>
+    ): AcquisitionManifest {
+        return AcquisitionManifest(
             targetCommitSha = TEST_COMMIT_SHA,
-            artifactIdentity = ArtifactIdentity.REPOSITORY
-        )
-
-        assertEquals(
-            ProjectSourceKind.GITHUB_REPOSITORY,
-            metadata.sourceKind
-        )
-
-        assertEquals(
-            ArtifactIdentity.REPOSITORY,
-            metadata.artifactIdentity
-        )
-
-        assertEquals(
-            TEST_COMMIT_SHA,
-            metadata.targetCommitSha
-        )
-    }
-
-    @Test
-    fun verifiedRecord_commitIdentity_matchesSnapshotCommitIdentity() {
-        val record = verifiedTextRecord(
-            relativePath = "README.md",
-            content = "# AuditFlow",
-            blobSha = TEST_BLOB_SHA
-        )
-
-        val manifest = AcquisitionManifest(
-            targetCommitSha = TEST_COMMIT_SHA,
-            targetBranch = "main",
-            expectedFilesCount = 1,
-            acquiredFilesCount = 1,
-            verifiedFilesCount = 1,
+            targetBranch = TEST_BRANCH,
+            expectedFilesCount = records.size,
+            acquiredFilesCount = records.size,
+            verifiedFilesCount = records.size,
             failedFilesCount = 0,
             missingFilesCount = 0,
             duplicateFilesCount = 0,
@@ -600,48 +661,8 @@ class ProjectIngestionRepositoryImplTest {
             isContentComplete = true,
             isVersionConsistent = true,
             status = AcquisitionStatus.COMPLETE,
-            records = mapOf(record.relativePath to record)
+            records = records
         )
-
-        assertEquals(
-            manifest.targetCommitSha,
-            record.targetCommitSha
-        )
-    }
-
-    @Test
-    fun incompleteVerificationEvidence_isDetectableBeforeSnapshotReuse() {
-        val verified = verifiedTextRecord(
-            relativePath = "src/Good.kt",
-            content = "fun good() {}",
-            blobSha = TEST_BLOB_SHA
-        )
-
-        val failed = AcquiredFileRecord(
-            relativePath = "src/Bad.kt",
-            name = "Bad.kt",
-            extension = "kt",
-            sizeBytes = 20L,
-            isDirectory = false,
-            blobSha = TEST_BLOB_SHA,
-            targetCommitSha = TEST_COMMIT_SHA,
-            verificationStatus = AcquiredFileRecord.VerificationStatus.FAILED,
-            failureReason = "Hash mismatch"
-        )
-
-        val records = mapOf(
-            verified.relativePath to verified,
-            failed.relativePath to failed
-        )
-
-        val allVerified = records.values.all {
-            it.verificationStatus ==
-                AcquiredFileRecord.VerificationStatus.VERIFIED &&
-                it.verifiedBlobSha != null &&
-                it.acquiredSizeBytes != null
-        }
-
-        assertFalse(allVerified)
     }
 
     private fun verifiedTextRecord(
@@ -649,17 +670,18 @@ class ProjectIngestionRepositoryImplTest {
         content: String,
         blobSha: String
     ): AcquiredFileRecord {
-        val fileName = relativePath.substringAfterLast('/')
+        val name = relativePath.substringAfterLast('/')
 
-        val extension = fileName
+        val extension = name
             .substringAfterLast('.', "")
             .lowercase()
 
-        val sizeBytes = content.toByteArray(Charsets.UTF_8).size.toLong()
+        val sizeBytes =
+            content.toByteArray(Charsets.UTF_8).size.toLong()
 
         return AcquiredFileRecord(
             relativePath = relativePath,
-            name = fileName,
+            name = name,
             extension = extension,
             sizeBytes = sizeBytes,
             isDirectory = false,
@@ -670,7 +692,8 @@ class ProjectIngestionRepositoryImplTest {
             acquiredSizeBytes = sizeBytes,
             verifiedBlobSha = blobSha,
             isBinary = false,
-            verificationStatus = AcquiredFileRecord.VerificationStatus.VERIFIED,
+            verificationStatus =
+                AcquiredFileRecord.VerificationStatus.VERIFIED,
             failureReason = null
         )
     }
@@ -678,11 +701,18 @@ class ProjectIngestionRepositoryImplTest {
     private companion object {
         const val TEST_OWNER = "sammyotsieno-cloud"
         const val TEST_REPO = "AuditFlow"
+        const val TEST_BRANCH = "main"
 
         const val TEST_COMMIT_SHA =
             "1111111111111111111111111111111111111111"
 
         const val TEST_BLOB_SHA =
             "2222222222222222222222222222222222222222"
+
+        const val TEST_BLOB_SHA_1 =
+            "3333333333333333333333333333333333333333"
+
+        const val TEST_BLOB_SHA_2 =
+            "4444444444444444444444444444444444444444"
     }
 }
